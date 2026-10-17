@@ -25,23 +25,25 @@ This document outlines the milestones and roadmap for `debim-ingetrazo` (Buildin
 
 ---
 
-### Phase 2: debim CLI / IFC4-Minimal Standard Compatibility (Current & Upcoming 🚀)
+### Phase 2: debim CLI / IFC4-Minimal Standard Compatibility (Completed ✅)
 Align `debim-ingetrazo` with the official debim CLI specification (`schema: IFC4-Minimal`).
 
-- [ ] **Dual-Mode Parser:**
+- [x] **Dual-Mode Parser:**
   - **Standard debim CLI mode:** `elements: [{ class: Ifc..., placement: { grid: ... } }]`
   - **Simplified mode:** `columns: [...]`, `beams: [...]`, `walls: [...]`, `slabs: [...]`
-- [ ] **Structural Grid System (`grids` / `IfcGrid`):**
+- [x] **Structural Grid System (`grids` / `IfcGrid`):**
   - Parse `grids.axes_x` and `grids.axes_y`.
   - Grid mathematical expression evaluation (e.g. `["GX_1 + 0.10", "GY_1 - 0.10"]`).
   - Render 2D/3D grid axes and elevation levels directly in IngeTrazo viewport.
-- [ ] **Complete BIM Entity Suite:**
+- [x] **Complete BIM Entity Suite:**
   - **`IfcFooting` / `Footing`:** Dedicated isolated spread & pile footing class with automatic column base placement.
   - **`IfcRoof` / `Roof`:** Gable (จั่ว), Hip (ปั้นหยา), Shed (เพิงหมาแหงน), and Flat (ดาดฟ้า) parametric roofs.
   - **`IfcStair` / `Stair`:** Architectural stairs with automated tread, riser, and landing geometry.
   - **`IfcSpace` / `Space`:** Functional room boundaries, net area calculation ($m^2$), and translucent 3D zone rendering.
   - **`IfcDoor` / `IfcWindow`:** Parametric 3D window frames and door panels.
-  - **`IfcFurniture` / `IfcEquipment`:** 3D sanitary and furniture blocks.
+- [x] **E2E Benchmark & QTO Take-Off Validation:**
+  - End-to-end benchmark validation against debim CLI playground models (`playground.debim.yaml` and `villa_db1.debim.yaml`).
+  - Verification of element counts, dimensions, positions, and QTO take-off metrics (area, gross/net volume).
 
 ---
 

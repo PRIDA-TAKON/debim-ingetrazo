@@ -1208,7 +1208,7 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
     # First pass: build all Column objects and index them for Footing auto-placement lookup
     columns_map: Dict[str, Column] = {}
     for idx, elem in enumerate(all_elements):
-        cls_str = f"{elem.get('class') or ''} {elem.get('category') or ''} {elem.get('type') or ''}".lower()
+        cls_str = f"{elem.get('class') or ''} {elem.get('category') or ''} {elem.get('type') or ''} {elem.get('tag') or ''}".lower()
         if "col" in cls_str or "ifccolumn" in cls_str:
             placement = elem.get("placement") or {}
             st_target = placement.get("storey") or elem.get("storey") if isinstance(placement, dict) else elem.get("storey")
@@ -1243,7 +1243,7 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
         st_elev = target_group.elevation
         st_height = target_group.height
 
-        cls_str = f"{elem.get('class') or ''} {elem.get('category') or ''} {elem.get('type') or ''}".lower()
+        cls_str = f"{elem.get('class') or ''} {elem.get('category') or ''} {elem.get('type') or ''} {elem.get('tag') or ''}".lower()
 
         if "col" in cls_str or "ifccolumn" in cls_str:
             # Look up previously built column from columns_map
@@ -1301,44 +1301,64 @@ def _build_footing(
 
     thickness = float(ft.get("thickness") or ft.get("depth") or ft.get("height") or 0.4) * scale
 
-    prof = ft.get("profile") or ft.get("section") or {}
-    if isinstance(prof, dict):
-        w = float(prof.get("width") or prof.get("b") or prof.get("x", 1.0)) * scale
-        d = float(prof.get("depth") or prof.get("length") or prof.get("h") or prof.get("y", w / scale)) * scale
-        section = (w, d)
-    elif isinstance(prof, (list, tuple)) and len(prof) >= 2:
-        section = (float(prof[0]) * scale, float(prof[1]) * scale)
+    raw_boundary = (
+        ft.get("boundary")
+        or ft.get("polygon")
+        or ft.get("points")
+        or placement.get("boundary")
+        or []
+    )
+
+    col_id = ft.get("column_id") or ft.get("column") or placement.get("column") or placement.get("column_id")
+    col_obj = columns_map.get(str(col_id)) if col_id and str(col_id) in columns_map else None
+
+    if raw_boundary:
+        boundary_pts = []
+        for pt in raw_boundary:
+            p_res = grid_sys.resolve_point(pt)
+            boundary_pts.append((p_res[0] * scale + ox, p_res[1] * scale + oy))
+        min_x = min(p[0] for p in boundary_pts)
+        max_x = max(p[0] for p in boundary_pts)
+        min_y = min(p[1] for p in boundary_pts)
+        max_y = max(p[1] for p in boundary_pts)
+        section = (max_x - min_x, max_y - min_y)
+        position = ((min_x + max_x) / 2.0, (min_y + max_y) / 2.0)
     else:
-        w = float(ft.get("width", ft.get("b", 1.0))) * scale
-        d = float(ft.get("depth", ft.get("length", ft.get("h", w / scale)))) * scale
-        section = (w, d)
+        prof = ft.get("profile") or ft.get("section") or {}
+        if isinstance(prof, dict):
+            w = float(prof.get("width") or prof.get("b") or prof.get("x", 1.0)) * scale
+            d = float(prof.get("depth") or prof.get("length") or prof.get("h") or prof.get("y", w / scale)) * scale
+            section = (w, d)
+        elif isinstance(prof, (list, tuple)) and len(prof) >= 2:
+            section = (float(prof[0]) * scale, float(prof[1]) * scale)
+        else:
+            w = float(ft.get("width", ft.get("b", 1.0))) * scale
+            d = float(ft.get("depth", ft.get("length", ft.get("h", w / scale)))) * scale
+            section = (w, d)
+
+        if col_obj is not None:
+            position = col_obj.position
+        else:
+            grid_spec = placement.get("grid") or ft.get("grid") or placement.get("position") or ft.get("position") or ft.get("location")
+            if grid_spec is not None:
+                p_res = grid_sys.resolve_point(grid_spec)
+                position = (p_res[0] * scale + ox, p_res[1] * scale + oy)
+            else:
+                position = (0.0, 0.0)
+
+    if "elevation" in ft or "elevation" in placement or "offset" in ft:
+        local_offset = float(ft.get("offset") or ft.get("elevation") or placement.get("elevation") or 0.0) * scale
+        abs_elevation = storey_elevation + local_offset
+    elif col_obj is not None:
+        abs_elevation = col_obj.elevation - thickness
+    else:
+        abs_elevation = storey_elevation
 
     raw_type = str(ft.get("footing_type") or ft.get("type") or ft.get("shape") or "isolated").lower()
     if "pile" in raw_type:
         footing_type = "pile_cap"
     else:
         footing_type = "isolated"
-
-    col_id = ft.get("column_id") or ft.get("column") or placement.get("column") or placement.get("column_id")
-    col_obj = columns_map.get(str(col_id)) if col_id and str(col_id) in columns_map else None
-
-    if col_obj is not None:
-        position = col_obj.position
-        if "elevation" in ft or "elevation" in placement or "offset" in ft:
-            local_offset = float(ft.get("offset") or ft.get("elevation") or placement.get("elevation") or 0.0) * scale
-            abs_elevation = storey_elevation + local_offset
-        else:
-            abs_elevation = col_obj.elevation - thickness
-    else:
-        grid_spec = placement.get("grid") or ft.get("grid") or placement.get("position") or ft.get("position") or ft.get("location")
-        if grid_spec is not None:
-            p_res = grid_sys.resolve_point(grid_spec)
-            position = (p_res[0] * scale + ox, p_res[1] * scale + oy)
-        else:
-            position = (0.0, 0.0)
-
-        local_offset = float(ft.get("offset") or ft.get("elevation") or placement.get("elevation") or 0.0) * scale
-        abs_elevation = storey_elevation + local_offset
 
     return Footing(
         id_str=f_id,
