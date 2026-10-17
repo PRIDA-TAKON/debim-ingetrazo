@@ -1,0 +1,19 @@
+{
+  "id": "debim-ingetrazo",
+  "name": "debim \u2014 Building-as-Code Loader",
+  "version": "0.1.0",
+  "author": "PRIDA-TAKON",
+  "license": "MIT",
+  "description": "Declarative OpenBIM manifest loader and live sync for IngeTrazo",
+  "min_ingetrazo_version": "0.5.8",
+  "repository": "https://github.com/ingelibre/debim-ingetrazo",
+  "download_url": "https://github.com/ingelibre/debim-ingetrazo/releases/download/v0.1.0/debim-ingetrazo.zip",
+  "sha256": "34bca812df3e6951d2c3b2a8b1d52ee9daf0e45325c7095feaedd61c98778fda",
+  "tags": [
+    "openbim",
+    "building-as-code",
+    "debim",
+    "live-sync",
+    "ai-agent"
+  ]
+}
