@@ -163,3 +163,142 @@ def test_builder_beams():
     assert beam.properties["rebar_main"] == "4DB12"
     assert beam.properties["rebar_stirrup"] == "RB9@0.15"
 
+
+def test_builder_playground_debim_yaml():
+    from pathlib import Path
+    from debim_ingetrazo.parser import parse_debim
+    playground_path = Path(__file__).resolve().parent.parent / "examples" / "playground.debim.yaml"
+    data = parse_debim(playground_path)
+    model = build_geometry(data)
+
+    assert model.name == "ทดสอบพิมพ์แบบบ้าน Playground"
+    assert model.unit_scale == 1.0
+    assert len(model.storeys) == 1
+
+    storey = model.storeys[0]
+    assert storey.id == "L1"
+    assert storey.elevation == 0.0
+    assert storey.height == 3.5
+
+    assert len(storey.children) == 1
+    col = storey.children[0]
+    assert isinstance(col, Column)
+    assert col.tag == "C1"
+    assert col.position == (0.0, 0.0)
+    assert col.section == (0.3, 0.3)
+    assert col.height == 3.5
+
+
+def test_parametric_grid_resolver_and_arithmetic_expressions():
+    from debim_ingetrazo.builder import GridSystem
+
+    grids_data = {
+        "axes_x": {"1": 0.0, "2": 4.0, "3": 8.0},
+        "axes_y": {"A": 0.0, "B": 5.0},
+    }
+    gs = GridSystem(grids_data)
+
+    # Intersection resolution
+    assert gs.resolve_point(["1", "A"]) == (0.0, 0.0)
+    assert gs.resolve_point(["2", "B"]) == (4.0, 5.0)
+
+    # Linear resolution
+    p1, p2 = gs.resolve_line(["1", "A"], ["2", "A"])
+    assert p1 == (0.0, 0.0)
+    assert p2 == (4.0, 0.0)
+
+    # Arithmetic offset expression evaluation
+    assert gs.resolve_point(["GX_1 + 0.10", "GY_1 - 0.10"]) == (0.10, -0.10)
+    assert gs.resolve_point(["GX_2 - 0.20", "GY_B + 0.50"]) == (3.80, 5.50)
+
+
+def test_dual_mode_ifc_elements_and_grid_faces():
+    manifest_yaml = """
+    schema: "IFC4-Minimal"
+    project:
+      name: "Dual Mode IFC Test"
+      units:
+        length: "METER"
+
+    spatial_structure:
+      storeys:
+        - id: "ST_01"
+          name: "Ground Level"
+          elevation: 0.0
+          height: 3.2
+
+    grids:
+      axes_x:
+        "1": 0.0
+        "2": 6.0
+      axes_y:
+        "A": 0.0
+        "B": 4.0
+
+    elements:
+      - class: IfcColumn
+        tag: "C1"
+        profile:
+          shape: BOX
+          width: 0.4
+          depth: 0.4
+        placement:
+          grid: ["1", "A"]
+          storey: "ST_01"
+
+      - class: IfcWall
+        tag: "W1"
+        thickness: 0.2
+        placement:
+          from_grid: ["1", "A"]
+          to_grid: ["2", "A"]
+          storey: "ST_01"
+
+      - class: IfcSlab
+        tag: "SL1"
+        thickness: 0.25
+        placement:
+          from_grid: ["1", "A"]
+          to_grid: ["2", "B"]
+          storey: "ST_01"
+
+      - class: IfcBeam
+        tag: "B1"
+        profile:
+          shape: BOX
+          width: 0.25
+          depth: 0.50
+        placement:
+          from_grid: ["1", "B"]
+          to_grid: ["2", "B"]
+          storey: "ST_01"
+    """
+    data = parse_debim_str(manifest_yaml)
+    model = build_geometry(data)
+
+    assert len(model.storeys) == 1
+    st = model.storeys[0]
+    assert len(st.children) == 4
+
+    col = next(c for c in st.children if isinstance(c, Column))
+    assert col.position == (0.0, 0.0)
+    assert col.section == (0.4, 0.4)
+
+    wall = next(c for c in st.children if isinstance(c, Wall))
+    assert wall.start == (0.0, 0.0)
+    assert wall.end == (6.0, 0.0)
+
+    slab = next(c for c in st.children if isinstance(c, Slab))
+    assert slab.boundary == [(0.0, 0.0), (6.0, 0.0), (6.0, 4.0), (0.0, 4.0)]
+
+    beam = next(c for c in st.children if isinstance(c, Beam))
+    assert beam.start == (0.0, 4.0)
+    assert beam.end == (6.0, 4.0)
+    assert beam.width == 0.25
+    assert beam.depth == 0.50
+
+    # Grid faces rendering test
+    from debim_ingetrazo.plugin import DebimPlugin
+    grid_faces = DebimPlugin._build_grid_faces(model.grid_system)
+    # 4 grid lines * (1 line ribbon + 2 balloons) = 12 faces
+    assert len(grid_faces) == 12

@@ -4,7 +4,220 @@ Converts parsed .debim manifest structures into native IngeTrazo 3D geometry obj
 """
 
 import math
+import re
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+from debim_ingetrazo.parser import extract_elements
+
+
+class GridSystem:
+    """
+    Parametric grid coordinate resolver for debim CLI schema.
+    Resolves grid intersection labels and arithmetic offset expressions (e.g. GX_1 + 0.10, GY_A - 0.10).
+    """
+
+    def __init__(self, grids_data: Optional[Dict[str, Any]] = None):
+        grids_data = grids_data or {}
+        raw_x = grids_data.get("axes_x") or grids_data.get("x") or {}
+        raw_y = grids_data.get("axes_y") or grids_data.get("y") or {}
+
+        self.axes_x: Dict[str, float] = {}
+        self.axes_y: Dict[str, float] = {}
+
+        if isinstance(raw_x, dict):
+            for k, v in raw_x.items():
+                try:
+                    self.axes_x[str(k)] = float(v)
+                except (ValueError, TypeError):
+                    pass
+        elif isinstance(raw_x, list):
+            for item in raw_x:
+                if isinstance(item, dict) and "id" in item and "position" in item:
+                    self.axes_x[str(item["id"])] = float(item["position"])
+
+        if isinstance(raw_y, dict):
+            for k, v in raw_y.items():
+                try:
+                    self.axes_y[str(k)] = float(v)
+                except (ValueError, TypeError):
+                    pass
+        elif isinstance(raw_y, list):
+            for item in raw_y:
+                if isinstance(item, dict) and "id" in item and "position" in item:
+                    self.axes_y[str(item["id"])] = float(item["position"])
+
+    def _lookup_x(self, key: str) -> Optional[float]:
+        if key in self.axes_x:
+            return self.axes_x[key]
+        if key.isdigit():
+            idx = int(key) - 1
+            x_vals = list(self.axes_x.values())
+            if 0 <= idx < len(x_vals):
+                return x_vals[idx]
+        return None
+
+    def _lookup_y(self, key: str) -> Optional[float]:
+        if key in self.axes_y:
+            return self.axes_y[key]
+        if key.isdigit():
+            idx = int(key) - 1
+            y_vals = list(self.axes_y.values())
+            if 0 <= idx < len(y_vals):
+                return y_vals[idx]
+        return None
+
+    def eval_coord(self, val: Any, is_y: bool = False) -> float:
+        """
+        Evaluates a coordinate value, grid label reference, or arithmetic expression into float.
+        """
+        if isinstance(val, (int, float)):
+            return float(val)
+
+        if not isinstance(val, str):
+            return 0.0
+
+        s = val.strip()
+        if not s:
+            return 0.0
+
+        if not is_y:
+            lx = self._lookup_x(s)
+            if lx is not None:
+                return lx
+        else:
+            ly = self._lookup_y(s)
+            if ly is not None:
+                return ly
+
+        if s.startswith("GX_"):
+            lx = self._lookup_x(s[3:])
+            if lx is not None:
+                return lx
+        if s.startswith("GY_"):
+            ly = self._lookup_y(s[3:])
+            if ly is not None:
+                return ly
+
+        expr = s
+        tokens = re.findall(r'[A-Za-z_][A-Za-z0-9_]*|\d+[A-Za-z_][A-Za-z0-9_]*|\b[A-Za-z0-9_]+\b', s)
+        tokens.sort(key=len, reverse=True)
+
+        for tok in tokens:
+            if tok.startswith("GX_"):
+                lx = self._lookup_x(tok[3:])
+                if lx is not None:
+                    expr = re.sub(r'\b' + re.escape(tok) + r'\b', str(lx), expr)
+            elif tok.startswith("GY_"):
+                ly = self._lookup_y(tok[3:])
+                if ly is not None:
+                    expr = re.sub(r'\b' + re.escape(tok) + r'\b', str(ly), expr)
+            elif not is_y:
+                lx = self._lookup_x(tok)
+                if lx is not None:
+                    expr = re.sub(r'\b' + re.escape(tok) + r'\b', str(lx), expr)
+            else:
+                ly = self._lookup_y(tok)
+                if ly is not None:
+                    expr = re.sub(r'\b' + re.escape(tok) + r'\b', str(ly), expr)
+
+        try:
+            if re.match(r'^[0-9\.\+\-\*\/\(\)\s]+$', expr):
+                return float(eval(expr, {"__builtins__": None}, {}))
+        except Exception:
+            pass
+
+        try:
+            return float(s)
+        except ValueError:
+            return 0.0
+
+    def resolve_point(self, point_spec: Any) -> Tuple[float, float]:
+        """
+        Resolves a 2D point from grid intersection spec, coordinate tuple, or dict.
+        """
+        if isinstance(point_spec, dict):
+            if "grid" in point_spec:
+                return self.resolve_point(point_spec["grid"])
+            x_val = point_spec.get("x", 0.0)
+            y_val = point_spec.get("y", 0.0)
+            return (self.eval_coord(x_val, is_y=False), self.eval_coord(y_val, is_y=True))
+
+        if isinstance(point_spec, (list, tuple)) and len(point_spec) >= 2:
+            x_res = self.eval_coord(point_spec[0], is_y=False)
+            y_res = self.eval_coord(point_spec[1], is_y=True)
+            return (x_res, y_res)
+
+        if isinstance(point_spec, str):
+            s = point_spec.strip()
+            if "-" in s:
+                parts = s.split("-", 1)
+                return (self.eval_coord(parts[0], is_y=False), self.eval_coord(parts[1], is_y=True))
+            elif "," in s:
+                parts = s.split(",", 1)
+                return (self.eval_coord(parts[0], is_y=False), self.eval_coord(parts[1], is_y=True))
+
+        return (0.0, 0.0)
+
+    def resolve_line(self, from_spec: Any, to_spec: Any) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        """Resolves start and end points of a linear element."""
+        p_start = self.resolve_point(from_spec)
+        p_end = self.resolve_point(to_spec)
+        return (p_start, p_end)
+
+    def get_grid_lines(
+        self, margin: float = 1.5, elevation: float = 0.0
+    ) -> List[Dict[str, Any]]:
+        """
+        Generates grid line 3D line coordinates and balloon positions for X and Y grid axes.
+        """
+        if not self.axes_x and not self.axes_y:
+            return []
+
+        x_coords = list(self.axes_x.values()) or [0.0]
+        y_coords = list(self.axes_y.values()) or [0.0]
+
+        min_x, max_x = min(x_coords), max(x_coords)
+        min_y, max_y = min(y_coords), max(y_coords)
+
+        if min_x == max_x:
+            min_x, max_x = min_x - 5.0, max_x + 5.0
+        if min_y == max_y:
+            min_y, max_y = min_y - 5.0, max_y + 5.0
+
+        grid_lines = []
+
+        for label, x_val in self.axes_x.items():
+            start_pt = (x_val, min_y - margin, elevation)
+            end_pt = (x_val, max_y + margin, elevation)
+            grid_lines.append({
+                "axis": "X",
+                "label": str(label),
+                "position": x_val,
+                "start": start_pt,
+                "end": end_pt,
+                "balloons": [start_pt, end_pt],
+            })
+
+        for label, y_val in self.axes_y.items():
+            start_pt = (min_x - margin, y_val, elevation)
+            end_pt = (max_x + margin, y_val, elevation)
+            grid_lines.append({
+                "axis": "Y",
+                "label": str(label),
+                "position": y_val,
+                "start": start_pt,
+                "end": end_pt,
+                "balloons": [start_pt, end_pt],
+            })
+
+        return grid_lines
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "axes_x": self.axes_x,
+            "axes_y": self.axes_y,
+            "grid_lines": self.get_grid_lines(),
+        }
 
 
 class GeometryObject:
@@ -387,9 +600,16 @@ class BuildingModel:
         self.storeys: List[Group] = []
 
     @staticmethod
-    def _calc_unit_scale(units: str) -> float:
-        u = units.lower().strip()
-        if u in ("m", "meter", "meters"):
+    def _calc_unit_scale(units: Union[str, Dict[str, Any]]) -> float:
+        if isinstance(units, dict):
+            u_str = str(units.get("length") or units.get("length_unit") or "m")
+        elif isinstance(units, str):
+            u_str = units
+        else:
+            u_str = "m"
+
+        u = u_str.lower().strip()
+        if u in ("m", "meter", "meters", "square_meter", "cubic_meter"):
             return 1.0
         elif u in ("mm", "millimeter", "millimeters"):
             return 0.001
@@ -414,12 +634,13 @@ class BuildingModel:
 def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
     """
     Constructs native 3D geometry objects from a parsed .debim manifest.
+    Supports both standard IFC4-Minimal elements and simplified schema modes.
     """
     proj_info = manifest_data.get("project", {}) or {}
     bldg_info = manifest_data.get("building", {}) or {}
 
     proj_name = proj_info.get("name") or bldg_info.get("name") or "Debim Building"
-    units = proj_info.get("units", "m")
+    units = proj_info.get("units") or "m"
     raw_origin = proj_info.get("origin", [0.0, 0.0, 0.0])
     if isinstance(raw_origin, (list, tuple)) and len(raw_origin) >= 3:
         origin = (float(raw_origin[0]), float(raw_origin[1]), float(raw_origin[2]))
@@ -430,21 +651,30 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
     scale = model.unit_scale
     ox, oy, oz = origin
 
-    # Read storeys / levels
-    storeys_data = bldg_info.get("storeys") or manifest_data.get("storeys") or []
+    # Initialize GridSystem
+    grids_data = manifest_data.get("grids") or {}
+    grid_sys = GridSystem(grids_data)
+    model.grid_system = grid_sys
 
-    if not storeys_data and ("slabs" in manifest_data or "walls" in manifest_data or "columns" in manifest_data or "beams" in manifest_data):
-        # Top-level entities fallback storey
+    # Read storeys / spatial structure
+    spatial = manifest_data.get("spatial_structure") or {}
+    storeys_data = (
+        spatial.get("storeys")
+        or spatial.get("building", {}).get("storeys")
+        or bldg_info.get("storeys")
+        or manifest_data.get("storeys")
+        or []
+    )
+
+    if not storeys_data and ("slabs" in manifest_data or "walls" in manifest_data or "columns" in manifest_data or "beams" in manifest_data or "elements" in manifest_data):
         storeys_data = [{
             "id": "DEFAULT_STOREY",
             "name": "Default Level",
             "elevation": 0.0,
             "height": 3.0,
-            "slabs": manifest_data.get("slabs", []),
-            "walls": manifest_data.get("walls", []),
-            "columns": manifest_data.get("columns", []),
-            "beams": manifest_data.get("beams", []),
         }]
+
+    storey_groups_map: Dict[str, Group] = {}
 
     for idx, st in enumerate(storeys_data):
         st_id = str(st.get("id", f"STOREY_{idx+1}"))
@@ -460,52 +690,110 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
             height=st_height,
             properties=st.get("properties"),
         )
-
-        # 1. Build Slabs (S-SLAB tag)
-        slabs_data = st.get("slabs") or []
-        for s_idx, sl in enumerate(slabs_data):
-            slab_obj = _build_slab(sl, s_idx, st_elev, scale, ox, oy)
-            storey_group.add_child(slab_obj)
-
-        # 2. Build Walls (A-WALL tag)
-        walls_data = st.get("walls") or []
-        for w_idx, wl in enumerate(walls_data):
-            wall_obj = _build_wall(wl, w_idx, st_elev, st_height, scale, ox, oy)
-            storey_group.add_child(wall_obj)
-
-        # 3. Build Columns (S-COLS tag)
-        cols_data = st.get("columns") or []
-        for c_idx, cl in enumerate(cols_data):
-            col_obj = _build_column(cl, c_idx, st_elev, st_height, scale, ox, oy)
-            storey_group.add_child(col_obj)
-
-        # 4. Build Beams (S-BEAM tag)
-        beams_data = st.get("beams") or []
-        for b_idx, bm in enumerate(beams_data):
-            beam_obj = _build_beam(bm, b_idx, st_elev, scale, ox, oy)
-            storey_group.add_child(beam_obj)
-
         model.storeys.append(storey_group)
         model.root_group.add_child(storey_group)
+        storey_groups_map[st_id] = storey_group
+
+    # Process all extracted elements
+    all_elements = extract_elements(manifest_data)
+
+    for idx, elem in enumerate(all_elements):
+        placement = elem.get("placement") or {}
+        st_target = None
+        if isinstance(placement, dict):
+            st_target = placement.get("storey") or elem.get("storey")
+        else:
+            st_target = elem.get("storey")
+
+        target_group = None
+        if st_target and str(st_target) in storey_groups_map:
+            target_group = storey_groups_map[str(st_target)]
+        elif model.storeys:
+            target_group = model.storeys[0]
+
+        if target_group is None:
+            continue
+
+        st_elev = target_group.elevation
+        st_height = target_group.height
+
+        cls_type = str(
+            elem.get("class") or elem.get("type") or elem.get("category") or ""
+        ).lower()
+
+        if "col" in cls_type or "ifccolumn" in cls_type:
+            col_obj = _build_column(elem, idx, st_elev, st_height, scale, ox, oy, grid_sys)
+            target_group.add_child(col_obj)
+        elif "wall" in cls_type or "ifcwall" in cls_type:
+            wall_obj = _build_wall(elem, idx, st_elev, st_height, scale, ox, oy, grid_sys)
+            target_group.add_child(wall_obj)
+        elif "slab" in cls_type or "ifcslab" in cls_type or "footing" in cls_type or "ifcfooting" in cls_type:
+            slab_obj = _build_slab(elem, idx, st_elev, scale, ox, oy, grid_sys)
+            target_group.add_child(slab_obj)
+        elif "beam" in cls_type or "ifcbeam" in cls_type:
+            beam_obj = _build_beam(elem, idx, st_elev, scale, ox, oy, grid_sys)
+            target_group.add_child(beam_obj)
 
     return model
 
 
 def _build_slab(
-    sl: Dict[str, Any], idx: int, storey_elevation: float, scale: float, ox: float, oy: float
+    sl: Dict[str, Any],
+    idx: int,
+    storey_elevation: float,
+    scale: float,
+    ox: float,
+    oy: float,
+    grid_sys: Optional[GridSystem] = None,
 ) -> Slab:
-    s_id = str(sl.get("id", f"SLAB_{idx+1}"))
-    s_name = str(sl.get("name", f"Slab {idx+1}"))
-    tag = str(sl.get("tag", "S-SLAB"))
-    thickness = float(sl.get("thickness", 0.2)) * scale
-    local_offset = float(sl.get("offset", sl.get("elevation", 0.0))) * scale
+    grid_sys = grid_sys or GridSystem()
+    placement = sl.get("placement") or {}
+    s_id = str(sl.get("id") or sl.get("tag") or f"SLAB_{idx+1}")
+    s_name = str(sl.get("name") or s_id)
+    cls_type = str(sl.get("class") or sl.get("category") or "").lower()
+    tag = str(sl.get("tag") or ("S-FOOTING" if "footing" in cls_type else "S-SLAB"))
+
+    thickness = float(sl.get("thickness") or sl.get("depth") or 0.2) * scale
+    local_offset = float(sl.get("offset") or sl.get("elevation") or placement.get("elevation") or 0.0) * scale
     abs_elevation = storey_elevation + local_offset
 
-    raw_boundary = sl.get("boundary") or sl.get("polygon") or sl.get("points") or []
+    raw_boundary = (
+        sl.get("boundary")
+        or sl.get("polygon")
+        or sl.get("points")
+        or placement.get("boundary")
+        or []
+    )
+
     boundary: List[Tuple[float, float]] = []
-    for pt in raw_boundary:
-        if isinstance(pt, (list, tuple)) and len(pt) >= 2:
-            boundary.append((float(pt[0]) * scale + ox, float(pt[1]) * scale + oy))
+    if raw_boundary:
+        for pt in raw_boundary:
+            p_res = grid_sys.resolve_point(pt)
+            boundary.append((p_res[0] * scale + ox, p_res[1] * scale + oy))
+    else:
+        from_g = placement.get("from_grid") or sl.get("from_grid")
+        to_g = placement.get("to_grid") or sl.get("to_grid")
+        if from_g and to_g:
+            p1 = grid_sys.resolve_point(from_g)
+            p2 = grid_sys.resolve_point(to_g)
+            boundary = [
+                (p1[0] * scale + ox, p1[1] * scale + oy),
+                (p2[0] * scale + ox, p1[1] * scale + oy),
+                (p2[0] * scale + ox, p2[1] * scale + oy),
+                (p1[0] * scale + ox, p2[1] * scale + oy),
+            ]
+        else:
+            g_pt = placement.get("grid") or sl.get("grid") or placement.get("position") or sl.get("position")
+            if g_pt:
+                cx, cy = grid_sys.resolve_point(g_pt)
+                hw = float(sl.get("width", 1.0)) / 2.0
+                hd = float(sl.get("depth", 1.0)) / 2.0
+                boundary = [
+                    ((cx - hw) * scale + ox, (cy - hd) * scale + oy),
+                    ((cx + hw) * scale + ox, (cy - hd) * scale + oy),
+                    ((cx + hw) * scale + ox, (cy + hd) * scale + oy),
+                    ((cx - hw) * scale + ox, (cy + hd) * scale + oy),
+                ]
 
     return Slab(
         id_str=s_id,
@@ -526,21 +814,31 @@ def _build_wall(
     scale: float,
     ox: float,
     oy: float,
+    grid_sys: Optional[GridSystem] = None,
 ) -> Wall:
-    w_id = str(wl.get("id", f"WALL_{idx+1}"))
-    w_name = str(wl.get("name", f"Wall {idx+1}"))
-    tag = str(wl.get("tag", "A-WALL"))
-    thickness = float(wl.get("thickness", 0.2)) * scale
-    height = float(wl.get("height", default_height / scale)) * scale
-    local_offset = float(wl.get("offset", wl.get("elevation", 0.0))) * scale
+    grid_sys = grid_sys or GridSystem()
+    placement = wl.get("placement") or {}
+    w_id = str(wl.get("id") or wl.get("tag") or f"WALL_{idx+1}")
+    w_name = str(wl.get("name") or w_id)
+    tag = str(wl.get("tag") or "A-WALL")
+    thickness = float(wl.get("thickness") or wl.get("width") or 0.2) * scale
+    height = float(wl.get("height") or (default_height / scale)) * scale
+    local_offset = float(wl.get("offset") or wl.get("elevation") or placement.get("elevation") or 0.0) * scale
     abs_elevation = storey_elevation + local_offset
 
-    raw_start = wl.get("start", [0.0, 0.0])
-    raw_end = wl.get("end", [1.0, 0.0])
-    start = (float(raw_start[0]) * scale + ox, float(raw_start[1]) * scale + oy)
-    end = (float(raw_end[0]) * scale + ox, float(raw_end[1]) * scale + oy)
+    from_g = placement.get("from_grid") or wl.get("from_grid") or wl.get("start")
+    to_g = placement.get("to_grid") or wl.get("to_grid") or wl.get("end")
 
-    # Openings
+    if from_g is not None and to_g is not None:
+        p1 = grid_sys.resolve_point(from_g)
+        p2 = grid_sys.resolve_point(to_g)
+    else:
+        p1 = (0.0, 0.0)
+        p2 = (1.0, 0.0)
+
+    start = (p1[0] * scale + ox, p1[1] * scale + oy)
+    end = (p2[0] * scale + ox, p2[1] * scale + oy)
+
     openings_data = wl.get("openings") or wl.get("voids") or []
     openings: List[Opening] = []
     for op_idx, op in enumerate(openings_data):
@@ -583,28 +881,52 @@ def _build_column(
     scale: float,
     ox: float,
     oy: float,
+    grid_sys: Optional[GridSystem] = None,
 ) -> Column:
-    c_id = str(cl.get("id", f"COL_{idx+1}"))
-    c_name = str(cl.get("name", f"Column {idx+1}"))
-    tag = str(cl.get("tag", "S-COLS"))
-    height = float(cl.get("height", default_height / scale)) * scale
-    local_offset = float(cl.get("offset", cl.get("elevation", 0.0))) * scale
+    grid_sys = grid_sys or GridSystem()
+    placement = cl.get("placement") or {}
+    c_id = str(cl.get("id") or cl.get("tag") or f"COL_{idx+1}")
+    c_name = str(cl.get("name") or c_id)
+    tag = str(cl.get("tag") or "S-COLS")
+    height = float(cl.get("height") or (default_height / scale)) * scale
+    local_offset = float(cl.get("offset") or cl.get("elevation") or placement.get("elevation") or 0.0) * scale
     abs_elevation = storey_elevation + local_offset
 
-    raw_pos = cl.get("position", cl.get("location", [0.0, 0.0]))
-    position = (float(raw_pos[0]) * scale + ox, float(raw_pos[1]) * scale + oy)
+    grid_spec = placement.get("grid") or cl.get("grid") or placement.get("position") or cl.get("position") or cl.get("location")
+    p_res = grid_sys.resolve_point(grid_spec) if grid_spec is not None else (0.0, 0.0)
+    position = (p_res[0] * scale + ox, p_res[1] * scale + oy)
 
-    raw_sec = cl.get("section", [0.3, 0.3])
-    if isinstance(raw_sec, (list, tuple)) and len(raw_sec) >= 2:
-        section = (float(raw_sec[0]) * scale, float(raw_sec[1]) * scale)
-    elif isinstance(raw_sec, (int, float)):
-        section = (float(raw_sec) * scale, float(raw_sec) * scale)
-    else:
-        section = (0.3 * scale, 0.3 * scale)
+    prof = cl.get("profile") or cl.get("section") or {}
+    section = (0.3 * scale, 0.3 * scale)
+    radius = None
+    profile_type = "rectangular"
 
-    radius = float(cl["radius"]) * scale if "radius" in cl and cl["radius"] is not None else None
-    profile = str(cl.get("profile", "circular" if radius is not None else "rectangular"))
-    component = str(cl.get("component", cl.get("type", "ColumnComponent")))
+    if isinstance(prof, dict):
+        shape = str(prof.get("shape", "BOX")).upper()
+        if shape in ("CIRCULAR", "CIRCLE", "ROUND"):
+            profile_type = "circular"
+            if "radius" in prof:
+                radius = float(prof["radius"]) * scale
+            elif "diameter" in prof:
+                radius = (float(prof["diameter"]) / 2.0) * scale
+            else:
+                radius = 0.15 * scale
+            section = (radius * 2.0, radius * 2.0)
+        else:
+            w = float(prof.get("width") or prof.get("b") or 0.3) * scale
+            d = float(prof.get("depth") or prof.get("height") or prof.get("h") or w / scale) * scale
+            section = (w, d)
+            profile_type = "rectangular"
+    elif isinstance(prof, (list, tuple)) and len(prof) >= 2:
+        section = (float(prof[0]) * scale, float(prof[1]) * scale)
+    elif isinstance(prof, (int, float)):
+        section = (float(prof) * scale, float(prof) * scale)
+
+    if "radius" in cl and cl["radius"] is not None:
+        radius = float(cl["radius"]) * scale
+        profile_type = "circular"
+
+    component = str(cl.get("component") or cl.get("type") or "ColumnComponent")
 
     return Column(
         id_str=c_id,
@@ -615,7 +937,7 @@ def _build_column(
         radius=radius,
         height=height,
         elevation=abs_elevation,
-        profile=profile,
+        profile=profile_type,
         component=component,
         properties=cl.get("properties"),
     )
@@ -628,28 +950,41 @@ def _build_beam(
     scale: float,
     ox: float,
     oy: float,
+    grid_sys: Optional[GridSystem] = None,
 ) -> Beam:
-    b_id = str(bm.get("id", f"BEAM_{idx+1}"))
-    b_name = str(bm.get("name", f"Beam {idx+1}"))
-    tag = str(bm.get("tag", "S-BEAM"))
+    grid_sys = grid_sys or GridSystem()
+    placement = bm.get("placement") or {}
+    b_id = str(bm.get("id") or bm.get("tag") or f"BEAM_{idx+1}")
+    b_name = str(bm.get("name") or b_id)
+    tag = str(bm.get("tag") or "S-BEAM")
 
-    sec = bm.get("section")
-    if isinstance(sec, (list, tuple)) and len(sec) >= 2:
-        width = float(sec[0]) * scale
-        depth = float(sec[1]) * scale
+    prof = bm.get("profile") or bm.get("section") or {}
+    if isinstance(prof, dict):
+        width = float(prof.get("width") or prof.get("b") or 0.2) * scale
+        depth = float(prof.get("depth") or prof.get("height") or prof.get("h") or 0.4) * scale
+    elif isinstance(prof, (list, tuple)) and len(prof) >= 2:
+        width = float(prof[0]) * scale
+        depth = float(prof[1]) * scale
     else:
         width = float(bm.get("width", bm.get("b", 0.2))) * scale
         depth = float(bm.get("depth", bm.get("height", bm.get("h", 0.4)))) * scale
 
-    local_offset = float(bm.get("offset", bm.get("elevation", 0.0))) * scale
+    local_offset = float(bm.get("offset") or bm.get("elevation") or placement.get("elevation") or 0.0) * scale
     abs_elevation = storey_elevation + local_offset
 
-    raw_start = bm.get("start", [0.0, 0.0])
-    raw_end = bm.get("end", [1.0, 0.0])
-    start = (float(raw_start[0]) * scale + ox, float(raw_start[1]) * scale + oy)
-    end = (float(raw_end[0]) * scale + ox, float(raw_end[1]) * scale + oy)
+    from_g = placement.get("from_grid") or bm.get("from_grid") or bm.get("start")
+    to_g = placement.get("to_grid") or bm.get("to_grid") or bm.get("end")
 
-    # Preserve rebar and structural properties
+    if from_g is not None and to_g is not None:
+        p1 = grid_sys.resolve_point(from_g)
+        p2 = grid_sys.resolve_point(to_g)
+    else:
+        p1 = (0.0, 0.0)
+        p2 = (1.0, 0.0)
+
+    start = (p1[0] * scale + ox, p1[1] * scale + oy)
+    end = (p2[0] * scale + ox, p2[1] * scale + oy)
+
     props = dict(bm.get("properties") or {})
     for key in ("rebar", "rebar_main", "rebar_stirrup", "stirrup", "section_name", "material", "elevation_ref"):
         if key in bm:

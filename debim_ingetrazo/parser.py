@@ -302,3 +302,76 @@ def parse_debim_file(filepath: Union[str, Path]) -> Dict[str, Any]:
 
 
 parse_debim = parse_debim_file
+
+
+def is_ifc_minimal_schema(data: Dict[str, Any]) -> bool:
+    """
+    Check if the parsed manifest dict conforms to the IFC4-Minimal debim CLI schema.
+    """
+    if not isinstance(data, dict):
+        return False
+    schema = data.get("schema")
+    if isinstance(schema, str) and "ifc4" in schema.lower():
+        return True
+    if "elements" in data or "grids" in data:
+        return True
+    return False
+
+
+def extract_elements(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract all element dictionaries from a parsed manifest, combining top-level
+    `elements` as well as storey-level elements/simplified entities.
+    """
+    if not isinstance(data, dict):
+        return []
+
+    elements: List[Dict[str, Any]] = []
+
+    # 1. Top-level elements
+    top_elements = data.get("elements")
+    if isinstance(top_elements, list):
+        for elem in top_elements:
+            if isinstance(elem, dict):
+                elements.append(elem)
+
+    # 2. Storey-level elements / simplified entities
+    spatial = data.get("spatial_structure") or {}
+    storeys = (
+        spatial.get("storeys")
+        or spatial.get("building", {}).get("storeys")
+        or data.get("building", {}).get("storeys")
+        or data.get("storeys")
+        or []
+    )
+
+    if isinstance(storeys, list):
+        for st in storeys:
+            if not isinstance(st, dict):
+                continue
+            st_id = st.get("id") or st.get("name")
+
+            # Standard storey elements list
+            st_elements = st.get("elements")
+            if isinstance(st_elements, list):
+                for elem in st_elements:
+                    if isinstance(elem, dict):
+                        elem_copy = dict(elem)
+                        if st_id and "storey" not in elem_copy and "placement" not in elem_copy:
+                            elem_copy["storey"] = st_id
+                        elements.append(elem_copy)
+
+            # Simplified entities: slabs, walls, columns, beams, footings
+            for category in ("slabs", "walls", "columns", "beams", "footings"):
+                cat_items = st.get(category)
+                if isinstance(cat_items, list):
+                    for item in cat_items:
+                        if isinstance(item, dict):
+                            item_copy = dict(item)
+                            if "category" not in item_copy:
+                                item_copy["category"] = category
+                            if st_id and "storey" not in item_copy and "placement" not in item_copy:
+                                item_copy["storey"] = st_id
+                            elements.append(item_copy)
+
+    return elements

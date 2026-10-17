@@ -195,6 +195,18 @@ class DebimPlugin(Tool):
         mesh = scene.mesh
         face_count = 0
 
+        # Render 2D/3D Grid line axes and text balloons
+        grid_sys = getattr(model, "grid_system", None)
+        if grid_sys is not None:
+            grid_faces = self._build_grid_faces(grid_sys)
+            for loop in grid_faces:
+                q_pts = [QVector3D(p[0], p[1], p[2]) for p in loop]
+                try:
+                    mesh.add_face(q_pts)
+                    face_count += 1
+                except Exception:
+                    pass
+
         # Traverse model storeys and build 3D mesh faces
         for st in getattr(model, "storeys", []):
             for child in getattr(st, "children", []):
@@ -240,6 +252,54 @@ class DebimPlugin(Tool):
             sb = self.app._window.statusBar()
             if sb:
                 sb.showMessage(status_msg, 4000)
+
+    @staticmethod
+    def _build_grid_faces(grid_sys: Any, z_elevation: float = 0.0) -> List[List[tuple]]:
+        """
+        Constructs 3D mesh quad faces for grid line axes and 12-sided polygon faces for balloon markers.
+        """
+        grid_lines = grid_sys.get_grid_lines(margin=1.5, elevation=z_elevation)
+        faces: List[List[tuple]] = []
+        line_w = 0.02  # half-width = 0.02m (total line width = 0.04m)
+        balloon_r = 0.35  # balloon circle radius = 0.35m
+
+        for gline in grid_lines:
+            axis = gline.get("axis")
+            st = gline.get("start")
+            en = gline.get("end")
+
+            if not st or not en:
+                continue
+
+            # Grid Line Ribbon
+            if axis == "X":
+                # Vertical line running along Y
+                faces.append([
+                    (st[0] - line_w, st[1], st[2]),
+                    (st[0] + line_w, st[1], st[2]),
+                    (en[0] + line_w, en[1], en[2]),
+                    (en[0] - line_w, en[1], en[2]),
+                ])
+            else:
+                # Horizontal line running along X
+                faces.append([
+                    (st[0], st[1] - line_w, st[2]),
+                    (en[0], en[1] - line_w, en[2]),
+                    (en[0], en[1] + line_w, en[2]),
+                    (st[0], st[1] + line_w, st[2]),
+                ])
+
+            # Grid Balloon Circles (12-sided polygon face at start & end)
+            for bx, by, bz in gline.get("balloons", []):
+                poly_pts = []
+                for i in range(12):
+                    angle = 2.0 * math.pi * i / 12.0
+                    px = bx + balloon_r * math.cos(angle)
+                    py = by + balloon_r * math.sin(angle)
+                    poly_pts.append((px, py, bz))
+                faces.append(poly_pts)
+
+        return faces
 
     @staticmethod
     def _build_wall_faces(wall: Any) -> List[List[tuple]]:

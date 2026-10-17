@@ -108,3 +108,47 @@ def test_parse_comments_and_empty_lines():
 def test_parse_file_not_found():
     with pytest.raises(FileNotFoundError):
         parse_debim("non_existent_file.debim")
+
+
+def test_parse_playground_debim_yaml():
+    from pathlib import Path
+    playground_path = Path(__file__).resolve().parent.parent / "examples" / "playground.debim.yaml"
+    res = parse_debim(playground_path)
+
+    assert res["schema"] == "IFC4-Minimal"
+    assert res["project"]["id"] == "PRJ-PLAYGROUND"
+    assert res["project"]["units"]["length"] == "METER"
+    assert "axes_x" in res["grids"]
+    assert "axes_y" in res["grids"]
+    assert res["grids"]["axes_x"]["1"] == 0.0
+    assert res["grids"]["axes_x"]["2"] == 4.0
+    assert res["grids"]["axes_y"]["A"] == 0.0
+    assert len(res["elements"]) == 1
+    elem = res["elements"][0]
+    assert elem["class"] == "IfcColumn"
+    assert elem["tag"] == "C1"
+    assert elem["placement"]["grid"] == ["1", "A"]
+
+
+def test_is_ifc_minimal_schema_and_extract_elements():
+    from debim_ingetrazo.parser import is_ifc_minimal_schema, extract_elements
+
+    manifest = {
+        "schema": "IFC4-Minimal",
+        "elements": [
+            {"class": "IfcColumn", "tag": "C1", "placement": {"grid": ["1", "A"]}}
+        ],
+        "storeys": [
+            {
+                "id": "L1",
+                "slabs": [{"id": "S1", "thickness": 0.2}]
+            }
+        ]
+    }
+
+    assert is_ifc_minimal_schema(manifest) is True
+    extracted = extract_elements(manifest)
+    assert len(extracted) == 2
+    tags_and_ids = [e.get("tag") or e.get("id") for e in extracted]
+    assert "C1" in tags_and_ids
+    assert "S1" in tags_and_ids
