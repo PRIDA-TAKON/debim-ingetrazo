@@ -45,7 +45,10 @@ Align `debim-ingetrazo` with the official debim CLI specification (`schema: IFC4
 
 ---
 
-### Phase 3: Bi-Directional Engineering & Production (Future 🔮)
-- [ ] **Bi-directional Sync:** Edit element in IngeTrazo viewport and synchronize back to `.debim.yaml`.
-- [ ] **Instant QTO / BOQ Dialog:** Calculate concrete volume, formwork, and rebar tonnage directly inside IngeTrazo via debim zero-dependency engine.
-- [ ] **PDF Layout & Sheet Plotting:** Automated 2D plan, elevation, section generation, and drawing border/titleblock layout for multi-sheet PDF plotting.
+### Phase 3: Manifest Export & Seamless debim CLI Handoff (Final Polish 🎯)
+Focus on producing a 100% valid, compliant `.debim` manifest from IngeTrazo to pass directly to `debim CLI`:
+- [ ] **Export / Save .debim Manifest:** Menu action `Extensions > debim > Export .debim Manifest...` to serialize the active 3D model into a clean `schema: IFC4-Minimal` YAML file.
+- [ ] **Model Validator:** Built-in lightweight schema validator to ensure zero syntax or continuity errors before handing off to `debim CLI`.
+- [ ] **debim CLI Integration Trigger (Optional Shortcut):** Quick action to trigger `debim qto` or `debim boq` via CLI command without leaving the workflow.
+- [ ] **Packaging & Extensions Hub Submission:** Final verification against IngeTrazo Extensions Hub catalog.
+
