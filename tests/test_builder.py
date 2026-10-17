@@ -5,7 +5,10 @@ Unit tests for 3D entity geometry builder (debim_ingetrazo/builder.py).
 import math
 import pytest
 from debim_ingetrazo.parser import parse_debim_str
-from debim_ingetrazo.builder import build_geometry, Slab, Wall, Column, Beam, Footing, Roof, Group
+from debim_ingetrazo.builder import (
+    build_geometry, Slab, Wall, Column, Beam, Footing, Roof, Group,
+    Stair, Space, Door, Window
+)
 
 
 def test_builder_storeys_and_tags():
@@ -473,3 +476,211 @@ def test_roof_object_types_and_geometry():
     rf4 = next(r for r in roofs if r.id == "RF_4")
     assert rf4.roof_type == "flat"
     assert rf4.pitch == 0.0
+
+
+def test_stair_geometry_and_steps():
+    stair = Stair(
+        id_str="STAIR_01",
+        name="Main Staircase",
+        tag="A-STAIR",
+        start=(0.0, 0.0),
+        end=(4.0, 0.0),
+        width=1.2,
+        height=3.2,
+        num_steps=16,
+        landing_depth=0.8,
+        landing_thickness=0.15,
+        elevation=0.0,
+        stair_type="straight",
+    )
+    assert stair.id == "STAIR_01"
+    assert stair.tag == "A-STAIR"
+    assert stair.width == 1.2
+    assert stair.height == 3.2
+    assert stair.num_steps == 16
+    assert stair.riser_height == pytest.approx(0.2)  # 3.2 / 16
+    assert stair.total_run == pytest.approx(4.0)
+    # run for steps = 4.0 - 0.8 = 3.2 -> tread_depth = 3.2 / 16 = 0.2
+    assert stair.tread_depth == pytest.approx(0.2)
+    assert stair.volume > 0.0
+    bounds = stair.get_3d_bounds()
+    assert bounds[0] == (0.0, -0.6, 0.0)
+    assert bounds[1] == (4.0, 0.6, 3.2)
+    d = stair.to_dict()
+    assert d["type"] == "Stair"
+    assert d["num_steps"] == 16
+    assert d["riser_height"] == pytest.approx(0.2)
+
+
+def test_space_geometry_and_zone_calculations():
+    # 5m x 4m room -> area = 20 m², height = 3m -> volume = 60 m³
+    space = Space(
+        id_str="RM_101",
+        name="Living Room",
+        tag="A-SPACE",
+        boundary=[(0.0, 0.0), (5.0, 0.0), (5.0, 4.0), (0.0, 4.0)],
+        height=3.0,
+        elevation=0.0,
+        number="101",
+        zone="Living",
+    )
+    assert space.id == "RM_101"
+    assert space.tag == "A-SPACE"
+    assert space.number == "101"
+    assert space.zone == "Living"
+    assert space.area == pytest.approx(20.0)
+    assert space.volume == pytest.approx(60.0)
+    bounds = space.get_3d_bounds()
+    assert bounds == ((0.0, 0.0, 0.0), (5.0, 4.0, 3.0))
+    d = space.to_dict()
+    assert d["type"] == "Space"
+    assert d["area"] == pytest.approx(20.0)
+    assert d["volume"] == pytest.approx(60.0)
+
+
+def test_door_and_window_geometry_components():
+    # 1. Door component with 3D frames and leaf panel
+    door = Door(
+        id_str="D1",
+        name="Main Entrance Door",
+        tag="A-DOOR",
+        position=(2.0, 0.0),
+        width=1.0,
+        height=2.2,
+        sill_height=0.0,
+        depth=0.15,
+        frame_width=0.05,
+        panel_thickness=0.04,
+        elevation=0.0,
+        direction=0.0,
+        door_type="single",
+    )
+    assert door.id == "D1"
+    assert door.tag == "A-DOOR"
+    assert door.width == 1.0
+    assert door.height == 2.2
+    assert door.volume > 0.0
+    bounds_d = door.get_3d_bounds()
+    assert bounds_d[0][2] == 0.0
+    assert bounds_d[1][2] == 2.2
+    dict_d = door.to_dict()
+    assert dict_d["type"] == "Door"
+    assert dict_d["door_type"] == "single"
+
+    # 2. Window component with 3D frames and glazed glass panel
+    window = Window(
+        id_str="W1",
+        name="Bedroom Window",
+        tag="A-WINDOW",
+        position=(4.0, 0.0),
+        width=1.5,
+        height=1.2,
+        sill_height=0.9,
+        depth=0.10,
+        frame_width=0.05,
+        glass_thickness=0.01,
+        elevation=0.0,
+        direction=90.0,
+        window_type="casement",
+    )
+    assert window.id == "W1"
+    assert window.tag == "A-WINDOW"
+    assert window.width == 1.5
+    assert window.height == 1.2
+    assert window.sill_height == 0.9
+    assert window.volume > 0.0
+    bounds_w = window.get_3d_bounds()
+    assert bounds_w[0][2] == 0.9
+    assert bounds_w[1][2] == 2.1  # sill 0.9 + height 1.2
+    dict_w = window.to_dict()
+    assert dict_w["type"] == "Window"
+    assert dict_w["window_type"] == "casement"
+
+
+def test_builder_architectural_manifest_parsing():
+    manifest_yaml = """
+    schema: "IFC4-Minimal"
+    project:
+      name: "Architectural Components Test"
+      units: "m"
+
+    spatial_structure:
+      storeys:
+        - id: "L1"
+          name: "Ground Floor"
+          elevation: 0.0
+          height: 3.2
+
+    elements:
+      - class: IfcStair
+        id: "ST_1"
+        width: 1.2
+        height: 3.2
+        steps: 16
+        landing: 1.0
+        placement:
+          from_grid: [0, 0]
+          to_grid: [5, 0]
+          storey: "L1"
+
+      - class: IfcSpace
+        id: "SP_1"
+        number: "101"
+        zone: "Lounge"
+        boundary: [[0, 0], [6, 0], [6, 5], [0, 5]]
+        placement:
+          storey: "L1"
+
+      - class: IfcDoor
+        id: "DR_1"
+        width: 0.9
+        height: 2.1
+        type: "single"
+        placement:
+          grid: [3, 0]
+          storey: "L1"
+
+      - class: IfcWindow
+        id: "WN_1"
+        width: 1.4
+        height: 1.2
+        sill: 1.0
+        type: "casement"
+        placement:
+          grid: [4, 5]
+          storey: "L1"
+    """
+    data = parse_debim_str(manifest_yaml)
+    model = build_geometry(data)
+
+    assert len(model.storeys) == 1
+    st = model.storeys[0]
+    assert len(st.children) == 4
+
+    stair = next(c for c in st.children if isinstance(c, Stair))
+    assert stair.id == "ST_1"
+    assert stair.tag == "A-STAIR"
+    assert stair.num_steps == 16
+    assert stair.landing_depth == 1.0
+
+    space = next(c for c in st.children if isinstance(c, Space))
+    assert space.id == "SP_1"
+    assert space.tag == "A-SPACE"
+    assert space.number == "101"
+    assert space.zone == "Lounge"
+    assert space.area == pytest.approx(30.0)  # 6 x 5
+    assert space.volume == pytest.approx(30.0 * 3.2)  # 96.0
+
+    door = next(c for c in st.children if isinstance(c, Door))
+    assert door.id == "DR_1"
+    assert door.tag == "A-DOOR"
+    assert door.position == (3.0, 0.0)
+    assert door.width == 0.9
+    assert door.height == 2.1
+
+    window = next(c for c in st.children if isinstance(c, Window))
+    assert window.id == "WN_1"
+    assert window.tag == "A-WINDOW"
+    assert window.position == (4.0, 5.0)
+    assert window.width == 1.4
+    assert window.sill_height == 1.0

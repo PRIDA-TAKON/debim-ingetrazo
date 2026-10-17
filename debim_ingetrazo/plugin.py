@@ -224,6 +224,14 @@ class DebimPlugin(Tool):
                     faces = self._build_footing_faces(child)
                 elif child_type == "Roof":
                     faces = self._build_roof_faces(child)
+                elif child_type == "Stair":
+                    faces = self._build_stair_faces(child)
+                elif child_type == "Space":
+                    faces = self._build_space_faces(child)
+                elif child_type == "Door":
+                    faces = self._build_door_faces(child)
+                elif child_type == "Window":
+                    faces = self._build_window_faces(child)
                 else:
                     faces = []
 
@@ -584,6 +592,186 @@ class DebimPlugin(Tool):
                 ]
 
         return []
+
+    @staticmethod
+    def _build_box_faces(
+        cx: float, cy: float, w: float, d: float, z_min: float, z_max: float, angle_deg: float = 0.0
+    ) -> List[List[tuple]]:
+        rad = math.radians(angle_deg)
+        ux, uy = math.cos(rad), math.sin(rad)
+        vx, vy = -uy, ux
+
+        hw, hd = w / 2.0, d / 2.0
+        c0 = (cx - hw * ux - hd * vx, cy - hw * uy - hd * vy)
+        c1 = (cx + hw * ux - hd * vx, cy + hw * uy - hd * vy)
+        c2 = (cx + hw * ux + hd * vx, cy + hw * uy + hd * vy)
+        c3 = (cx - hw * ux + hd * vx, cy - hw * uy + hd * vy)
+
+        b0 = (c0[0], c0[1], z_min)
+        b1 = (c1[0], c1[1], z_min)
+        b2 = (c2[0], c2[1], z_min)
+        b3 = (c3[0], c3[1], z_min)
+
+        t0 = (c0[0], c0[1], z_max)
+        t1 = (c1[0], c1[1], z_max)
+        t2 = (c2[0], c2[1], z_max)
+        t3 = (c3[0], c3[1], z_max)
+
+        return [
+            [b0, b3, b2, b1],  # bottom
+            [t0, t1, t2, t3],  # top
+            [b0, b1, t1, t0],  # side 1
+            [b1, b2, t2, t1],  # side 2
+            [b2, b3, t3, t2],  # side 3
+            [b3, b0, t0, t3],  # side 4
+        ]
+
+    @staticmethod
+    def _build_stair_faces(stair: Any) -> List[List[tuple]]:
+        start, end = stair.start, stair.end
+        width, height = stair.width, stair.height
+        num_steps = getattr(stair, "num_steps", 16)
+        riser_h = getattr(stair, "riser_height", height / max(1, num_steps))
+        tread_d = getattr(stair, "tread_depth", 0.28)
+        elevation = stair.elevation
+        landing_d = getattr(stair, "landing_depth", 0.0)
+        landing_t = getattr(stair, "landing_thickness", 0.15)
+
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        run_len = math.hypot(dx, dy)
+        if run_len == 0:
+            ux, uy = 1.0, 0.0
+        else:
+            ux, uy = dx / run_len, dy / run_len
+
+        angle_deg = math.degrees(math.atan2(uy, ux))
+        faces: List[List[tuple]] = []
+
+        for i in range(num_steps):
+            dist_i = (i + 0.5) * tread_d
+            cx = start[0] + dist_i * ux
+            cy = start[1] + dist_i * uy
+            z_bot = elevation + i * riser_h
+            z_top = elevation + (i + 1) * riser_h
+            step_faces = DebimPlugin._build_box_faces(
+                cx, cy, tread_d, width, z_bot, z_top, angle_deg
+            )
+            faces.extend(step_faces)
+
+        if landing_d > 0:
+            dist_landing = num_steps * tread_d + landing_d / 2.0
+            cx = start[0] + dist_landing * ux
+            cy = start[1] + dist_landing * uy
+            z_top = elevation + height
+            z_bot = z_top - landing_t
+            landing_faces = DebimPlugin._build_box_faces(
+                cx, cy, landing_d, width, z_bot, z_top, angle_deg
+            )
+            faces.extend(landing_faces)
+
+        return faces
+
+    @staticmethod
+    def _build_space_faces(space: Any) -> List[List[tuple]]:
+        boundary, height, elevation = space.boundary, space.height, space.elevation
+        n = len(boundary)
+        if n < 3:
+            return []
+        b_pts = [(p[0], p[1], elevation) for p in boundary]
+        t_pts = [(p[0], p[1], elevation + height) for p in boundary]
+
+        faces = [
+            list(reversed(b_pts)),  # floor
+            list(t_pts),            # ceiling
+        ]
+        for i in range(n):
+            nxt = (i + 1) % n
+            faces.append([b_pts[i], b_pts[nxt], t_pts[nxt], t_pts[i]])
+        return faces
+
+    @staticmethod
+    def _build_door_faces(door: Any) -> List[List[tuple]]:
+        x, y = door.position
+        w, h, depth = door.width, door.height, door.depth
+        frame_w = door.frame_width
+        panel_t = door.panel_thickness
+        z_min = door.elevation + door.sill_height
+        z_max = z_min + h
+        angle_deg = door.direction
+
+        rad = math.radians(angle_deg)
+        ux, uy = math.cos(rad), math.sin(rad)
+
+        faces: List[List[tuple]] = []
+
+        # Top frame member
+        z_top_frame_min = z_max - frame_w
+        top_frame = DebimPlugin._build_box_faces(x, y, w, depth, z_top_frame_min, z_max, angle_deg)
+        faces.extend(top_frame)
+
+        # Left jamb frame
+        hw_inner = (w / 2.0) - (frame_w / 2.0)
+        left_cx = x - hw_inner * ux
+        left_cy = y - hw_inner * uy
+        left_jamb = DebimPlugin._build_box_faces(left_cx, left_cy, frame_w, depth, z_min, z_top_frame_min, angle_deg)
+        faces.extend(left_jamb)
+
+        # Right jamb frame
+        right_cx = x + hw_inner * ux
+        right_cy = y + hw_inner * uy
+        right_jamb = DebimPlugin._build_box_faces(right_cx, right_cy, frame_w, depth, z_min, z_top_frame_min, angle_deg)
+        faces.extend(right_jamb)
+
+        # Leaf door panel
+        w_panel = max(0.01, w - 2 * frame_w)
+        panel = DebimPlugin._build_box_faces(x, y, w_panel, panel_t, z_min, z_top_frame_min, angle_deg)
+        faces.extend(panel)
+
+        return faces
+
+    @staticmethod
+    def _build_window_faces(window: Any) -> List[List[tuple]]:
+        x, y = window.position
+        w, h, depth = window.width, window.height, window.depth
+        frame_w = window.frame_width
+        glass_t = window.glass_thickness
+        z_min = window.elevation + window.sill_height
+        z_max = z_min + h
+        angle_deg = window.direction
+
+        rad = math.radians(angle_deg)
+        ux, uy = math.cos(rad), math.sin(rad)
+
+        faces: List[List[tuple]] = []
+
+        # Top frame
+        top_frame = DebimPlugin._build_box_faces(x, y, w, depth, z_max - frame_w, z_max, angle_deg)
+        faces.extend(top_frame)
+
+        # Bottom frame
+        bot_frame = DebimPlugin._build_box_faces(x, y, w, depth, z_min, z_min + frame_w, angle_deg)
+        faces.extend(bot_frame)
+
+        # Left jamb
+        hw_inner = (w / 2.0) - (frame_w / 2.0)
+        left_cx = x - hw_inner * ux
+        left_cy = y - hw_inner * uy
+        left_jamb = DebimPlugin._build_box_faces(left_cx, left_cy, frame_w, depth, z_min + frame_w, z_max - frame_w, angle_deg)
+        faces.extend(left_jamb)
+
+        # Right jamb
+        right_cx = x + hw_inner * ux
+        right_cy = y + hw_inner * uy
+        right_jamb = DebimPlugin._build_box_faces(right_cx, right_cy, frame_w, depth, z_min + frame_w, z_max - frame_w, angle_deg)
+        faces.extend(right_jamb)
+
+        # Glazed glass panel
+        w_glass = max(0.01, w - 2 * frame_w)
+        glass_panel = DebimPlugin._build_box_faces(x, y, w_glass, glass_t, z_min + frame_w, z_max - frame_w, angle_deg)
+        faces.extend(glass_panel)
+
+        return faces
 
 
 def register_plugin(app: Optional[Any] = None) -> DebimPlugin:
