@@ -8,7 +8,7 @@
   "min_ingetrazo_version": "0.5.8",
   "repository": "https://github.com/PRIDA-TAKON/debim-ingetrazo",
   "download_url": "https://github.com/PRIDA-TAKON/debim-ingetrazo/releases/download/v0.1.0/debim-ingetrazo.zip",
-  "sha256": "63af42f9ccf23d8398771e13515bd9f858298b80c0eafa4303ac2b9b42612d9b",
+  "sha256": "7023f3a50bf622da3ad54c32fd4e6beb8064ff4a9a5b3ee3f5ab3520ac4db9e3",
   "tags": [
     "openbim",
     "building-as-code",
