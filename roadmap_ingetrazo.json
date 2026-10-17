@@ -32,10 +32,34 @@
     }
   },
   {
-    "match_keywords": ["catalog", "submission", "issue 5", "#5", "standard syntax", "ifc4", "roadmap"],
+    "match_keywords": ["catalog", "submission", "issue 5", "#5", "phase 2"],
     "next_issue": {
-      "title": "feat(spec): debim CLI IFC4-Minimal standard syntax and comprehensive BIM classes",
-      "body": "### Overview\nAlign debim-ingetrazo parser and geometry builder with official debim CLI specification (`schema: IFC4-Minimal`).\n\n### Tasks\n1. Dual-mode parser supporting `elements: [{ class: Ifc..., placement: { grid: ... } }]` and `grids: { axes_x, axes_y }`.\n2. Grid-offset evaluation (e.g. 'GX_1 + 0.10', 'from_grid', 'to_grid').\n3. Full BIM Class suite: `IfcFooting`, `IfcRoof`, `IfcStair`, `IfcSpace`, `IfcGrid`, `IfcDoor`, `IfcWindow`.\n4. Comprehensive test coverage matching `debim CLI` output.",
+      "title": "feat(spec): dual-mode parser for debim CLI schema and parametric Grid coordinate resolver",
+      "body": "### Overview\nAlign `debim-ingetrazo` parser with official debim CLI specification (`schema: IFC4-Minimal`). Support both standard `elements: [{ class: Ifc... }]` and simplified mode.\n\n### Tasks\n1. Support reading `schema: \"IFC4-Minimal\"`, `grids: { axes_x, axes_y }`, and `elements: [...]` in `parser.py` and `builder.py`.\n2. Implement parametric grid coordinate resolver:\n   - Resolve grid intersections: `placement: { grid: [\"1\", \"A\"] }` -> coordinates `(x, y)`.\n   - Resolve linear members: `from_grid: [\"1\", \"A\"], to_grid: [\"2\", \"A\"]` -> `start`, `end`.\n   - Evaluate grid arithmetic offset expressions (e.g. `[\"GX_1 + 0.10\", \"GY_1 - 0.10\"]`).\n3. Render 2D/3D Grid line axes and text balloons in IngeTrazo viewport.\n4. Add unit tests in `tests/test_parser.py` and `tests/test_builder.py` covering debim CLI `playground.debim.yaml`.",
+      "label": "jules"
+    }
+  },
+  {
+    "match_keywords": ["grid", "axes_x", "ifc4-minimal", "resolver", "dual-mode"],
+    "next_issue": {
+      "title": "feat(geometry): dedicated IfcFooting and IfcRoof (Gable, Hip, Shed, Flat) 3D mesh generation",
+      "body": "### Overview\nImplement first-class structural footings and architectural roof geometries in `builder.py` and `plugin.py`.\n\n### Tasks\n1. Create `Footing(GeometryObject)` class:\n   - Support isolated spread footings (`shape: BOX`) and pile caps.\n   - Support auto-placement under column bases or explicit placement.\n2. Create `Roof(GeometryObject)` class:\n   - Gable (หลังคาจั่ว), Hip (หลังคาปั้นหยา), Shed (เพิงหมาแหงน), and Flat (ดาดฟ้า).\n   - Compute sloping 3D quad/triangle faces with overhang (eaves) and pitch angles.\n3. Implement `_build_footing_faces()` and `_build_roof_faces()` in `plugin.py`.\n4. Add test cases in `tests/test_builder.py` and `tests/test_plugin.py`.",
+      "label": "jules"
+    }
+  },
+  {
+    "match_keywords": ["footing", "roof", "gable", "hip", "ifcfooting", "ifcroof"],
+    "next_issue": {
+      "title": "feat(geometry): architectural IfcStair, IfcSpace zones, and parametric IfcDoor/IfcWindow components",
+      "body": "### Overview\nImplement architectural spaces, stairs, and detailed door/window components in `debim-ingetrazo`.\n\n### Tasks\n1. Create `Stair(GeometryObject)`:\n   - Generate parametric steps (risers, treads, and landing plates).\n2. Create `Space(GeometryObject)`:\n   - Calculate room net floor area ($m^2$) and air volume ($m^3$).\n   - Render translucent 3D spatial boundary volumes in IngeTrazo.\n3. Create `Door` and `Window` component entities with 3D frames and glazed panels.\n4. Add unit and visual tests.",
+      "label": "jules"
+    }
+  },
+  {
+    "match_keywords": ["stair", "space", "door", "window", "ifcstair", "ifcspace"],
+    "next_issue": {
+      "title": "feat(test): E2E benchmark against debim CLI playground models and QTO take-off validation",
+      "body": "### Overview\nVerify full interoperability between `debim-ingetrazo` and `debim CLI`.\n\n### Tasks\n1. Load `examples/playground.debim.yaml` and `examples/villa_db1.debim.yaml` in end-to-end tests.\n2. Verify that element count, dimensions, and positions in IngeTrazo match `debim CLI` QTO output.\n3. Ensure 100% test pass rate and update documentation.",
       "label": "jules"
     }
   }
