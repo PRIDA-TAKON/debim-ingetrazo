@@ -1,0 +1,9 @@
+{
+  "id": "debim-ingetrazo",
+  "name": "debim \u2014 Building-as-Code Loader",
+  "version": "0.1.0",
+  "author": "PRIDA-TAKON",
+  "license": "MIT",
+  "description": "Declarative OpenBIM manifest loader and live sync for IngeTrazo",
+  "min_ingetrazo_version": "0.5.8"
+}
