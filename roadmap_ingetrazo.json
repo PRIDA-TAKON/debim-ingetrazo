@@ -1,0 +1,34 @@
+[
+  {
+    "match_keywords": ["scaffolding", "metadata", "packaging", "ci workflow", "issue 1", "#1"],
+    "next_issue": {
+      "title": "feat(ui): IngeTrazo Plugin UI, toolbar icon, and Extensions menu registration",
+      "body": "### Overview\nImplement the plugin entry point and register debim tools under the IngeTrazo Extensions menu and toolbar.\n\n### Tasks\n1. Create `debim_ingetrazo/plugin.py` subclassing IngeTrazo's base Tool class.\n2. Register menu entries under `Extensions > debim`:\n   - `Import .debim Manifest...`\n   - `Toggle Live Sync`\n   - `Open Agentic AI Console`\n3. Provide toolbar action with SVG/PNG debim icon.\n4. Ensure compatibility with IngeTrazo's Python plugin loader.",
+      "label": "jules"
+    }
+  },
+  {
+    "match_keywords": ["plugin ui", "toolbar", "extensions menu", "registration", "issue 2", "#2"],
+    "next_issue": {
+      "title": "feat(core): pure-python .debim parser and 3D entity geometry builder",
+      "body": "### Overview\nImplement declarative manifest parsing and convert .debim entities into native IngeTrazo 3D geometry.\n\n### Tasks\n1. Implement lightweight YAML/debim parser (`debim_ingetrazo/parser.py`) with zero heavy dependencies.\n2. Build entity converters (`debim_ingetrazo/builder.py`):\n   - `storeys` -> Hierarchical Groups\n   - `slabs` -> Solid Face Extrusions (`S-SLAB` tag)\n   - `walls` -> Extruded Wall Volumes with openings (`A-WALL` tag)\n   - `columns` -> Reusable Component Instances (`S-COLS` tag)\n3. Preserve dimensional accuracy and coordinate offsets.",
+      "label": "jules"
+    }
+  },
+  {
+    "match_keywords": ["parser", "entity", "geometry builder", "builder", "issue 3", "#3"],
+    "next_issue": {
+      "title": "feat(agent): Agentic Live Bridge and file watcher for live AI typing and hot-reload",
+      "body": "### Overview\nAllow AI agents to stream and inject .debim manifests directly into IngeTrazo, and provide file hot-reloading.\n\n### Tasks\n1. Implement a local JSON-RPC / HTTP listener (`debim_ingetrazo/agent_bridge.py`) listening on `localhost:8482` allowing external AI agents to push raw .debim content to the active viewport.\n2. Implement a background file watcher (`debim_ingetrazo/watcher.py`) that re-renders the viewport automatically when a target `.debim` file is saved.\n3. Add an in-app interactive AI Console dialog to type/paste .debim text live.",
+      "label": "jules"
+    }
+  },
+  {
+    "match_keywords": ["agentic", "live bridge", "hot-reload", "watcher", "socket", "issue 4", "#4"],
+    "next_issue": {
+      "title": "feat(test): E2E benchmark validation and IngeTrazo Extensions Hub catalog submission",
+      "body": "### Overview\nValidate the extension against iconic debim models and prepare the distribution package for ingelibre/ingetrazo-extensions.\n\n### Tasks\n1. Add unit and E2E integration tests in `tests/` validating manifest import on sample models (Modern Thai House, Church of the Light).\n2. Generate extension catalog registry entry (`catalog_entry.json`) conforming to `ingelibre/ingetrazo-extensions` schema.\n3. Verify automated zip build and SHA-256 release workflow.",
+      "label": "jules"
+    }
+  }
+]
