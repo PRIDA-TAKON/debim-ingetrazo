@@ -39,10 +39,22 @@ def test_debim_plugin_toggle_live_sync():
     res1 = plugin.toggle_live_sync()
     assert res1 is True
     assert plugin.live_sync_enabled is True
+    assert plugin.agent_bridge.is_running is True
 
     res2 = plugin.toggle_live_sync()
     assert res2 is False
     assert plugin.live_sync_enabled is False
+    assert plugin.agent_bridge.is_running is False
+
+
+def test_debim_plugin_open_agentic_ai_console():
+    plugin = DebimPlugin()
+    console = plugin.open_agentic_ai_console()
+    assert console.is_open is True
+
+    model = console.execute_live("project:\n  name: AI Generated House\n")
+    assert model.name == "AI Generated House"
+    assert plugin.active_model.name == "AI Generated House"
 
 
 def test_register_plugin_with_dummy_app():

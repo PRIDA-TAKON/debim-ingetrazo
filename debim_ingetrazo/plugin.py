@@ -5,6 +5,10 @@ IngeTrazo Plugin Entry Point for debim-ingetrazo.
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 
+from debim_ingetrazo.agent_bridge import AgentBridge
+from debim_ingetrazo.console import AIConsoleDialog, open_console_dialog
+from debim_ingetrazo.watcher import DebimWatcher
+
 try:
     from ingetrazo.sdk import Tool  # type: ignore
 except ImportError:
@@ -31,7 +35,15 @@ class DebimPlugin(Tool):
         self.resources_dir = Path(__file__).resolve().parent / "resources"
         self.icon_svg = self.resources_dir / "icon.svg"
         self.icon_png = self.resources_dir / "icon.png"
+
         self.live_sync_enabled = False
+        self.active_model: Optional[Any] = None
+        self.active_file_path: Optional[Path] = None
+
+        # Agent Bridge and Watcher components
+        self.agent_bridge = AgentBridge(on_debim_received=self._on_live_debim_received)
+        self.file_watcher = DebimWatcher(on_file_changed=self._on_file_watcher_changed)
+        self.console_dialog: Optional[AIConsoleDialog] = None
 
     def get_menu_registration(self) -> Dict[str, Any]:
         """
@@ -86,28 +98,62 @@ class DebimPlugin(Tool):
             return None
 
         if isinstance(file_path_or_str, (str, Path)) and Path(file_path_or_str).exists():
-            manifest = parse_debim(file_path_or_str)
+            path = Path(file_path_or_str)
+            manifest = parse_debim(path)
+            self.active_file_path = path
+            if self.file_watcher:
+                self.file_watcher.set_target_file(path)
         elif isinstance(file_path_or_str, str):
             manifest = parse_debim_str(file_path_or_str)
         else:
             return None
 
         model = build_geometry(manifest)
+        self.active_model = model
         return model
 
     def toggle_live_sync(self) -> bool:
         """
         Handler for 'Toggle Live Sync'.
+        Starts or stops background Agent Bridge and File Watcher.
         """
         self.live_sync_enabled = not self.live_sync_enabled
+
+        if self.live_sync_enabled:
+            self.agent_bridge.start()
+            if self.active_file_path and self.active_file_path.exists():
+                self.file_watcher.set_target_file(self.active_file_path)
+                self.file_watcher.start()
+        else:
+            self.agent_bridge.stop()
+            self.file_watcher.stop()
+
         return self.live_sync_enabled
 
-    def open_agentic_ai_console(self) -> None:
+    def open_agentic_ai_console(self) -> AIConsoleDialog:
         """
         Handler for 'Open Agentic AI Console'.
+        Launches interactive AI Console dialog.
         """
-        # Placeholder for Agentic AI Console opening
-        pass
+        if not self.console_dialog or not self.console_dialog.is_open:
+            self.console_dialog = open_console_dialog(
+                on_submit=self._on_live_debim_received
+            )
+        else:
+            self.console_dialog.open()
+        return self.console_dialog
+
+    def _on_live_debim_received(
+        self, content_str: str, manifest_dict: Dict[str, Any], building_model: Any
+    ) -> None:
+        """Callback invoked when new model geometry is received via Bridge, Watcher, or Console."""
+        self.active_model = building_model
+
+    def _on_file_watcher_changed(
+        self, file_path: Path, manifest_dict: Dict[str, Any], building_model: Any
+    ) -> None:
+        """Callback invoked when file watcher detects file modification."""
+        self.active_model = building_model
 
 
 def register_plugin(app: Optional[Any] = None) -> DebimPlugin:
