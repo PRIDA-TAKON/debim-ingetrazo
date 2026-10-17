@@ -3,7 +3,7 @@ IngeTrazo Plugin Entry Point for debim-ingetrazo.
 """
 
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 
 try:
     from ingetrazo.sdk import Tool  # type: ignore
@@ -74,12 +74,26 @@ class DebimPlugin(Tool):
             },
         }
 
-    def import_manifest(self) -> None:
+    def import_manifest(self, file_path_or_str: Optional[Union[str, Path]] = None) -> Optional[Any]:
         """
         Handler for 'Import .debim Manifest...'.
+        Parses the manifest and builds 3D geometry objects.
         """
-        # Placeholder for manifest import handling
-        pass
+        from debim_ingetrazo.parser import parse_debim, parse_debim_str
+        from debim_ingetrazo.builder import build_geometry
+
+        if file_path_or_str is None:
+            return None
+
+        if isinstance(file_path_or_str, (str, Path)) and Path(file_path_or_str).exists():
+            manifest = parse_debim(file_path_or_str)
+        elif isinstance(file_path_or_str, str):
+            manifest = parse_debim_str(file_path_or_str)
+        else:
+            return None
+
+        model = build_geometry(manifest)
+        return model
 
     def toggle_live_sync(self) -> bool:
         """
