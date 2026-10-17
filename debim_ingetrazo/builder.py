@@ -583,6 +583,170 @@ class Beam(GeometryObject):
         return res
 
 
+class Footing(GeometryObject):
+    """Structural Footing or Pile Cap object (S-FOOTING tag)."""
+
+    def __init__(
+        self,
+        id_str: str,
+        name: str = "",
+        tag: str = "S-FOOTING",
+        position: Tuple[float, float] = (0.0, 0.0),
+        section: Tuple[float, float] = (1.0, 1.0),
+        thickness: float = 0.4,
+        elevation: float = 0.0,
+        footing_type: str = "isolated",
+        column_id: Optional[str] = None,
+        properties: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(id_str, name=name, tag=tag or "S-FOOTING", properties=properties)
+        self.position = position
+        self.section = section
+        self.thickness = thickness
+        self.elevation = elevation
+        self.footing_type = footing_type
+        self.column_id = column_id
+
+    @property
+    def volume(self) -> float:
+        return self.section[0] * self.section[1] * self.thickness
+
+    def get_3d_bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        x, y = self.position
+        hw, hd = self.section[0] / 2.0, self.section[1] / 2.0
+        min_x, max_x = x - hw, x + hw
+        min_y, max_y = y - hd, y + hd
+        min_z = min(self.elevation, self.elevation + self.thickness)
+        max_z = max(self.elevation, self.elevation + self.thickness)
+        return ((min_x, min_y, min_z), (max_x, max_y, max_z))
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = super().to_dict()
+        res.update(
+            {
+                "position": self.position,
+                "section": self.section,
+                "thickness": self.thickness,
+                "elevation": self.elevation,
+                "footing_type": self.footing_type,
+                "column_id": self.column_id,
+                "volume": self.volume,
+                "bounds": self.get_3d_bounds(),
+            }
+        )
+        return res
+
+
+class Roof(GeometryObject):
+    """Architectural Roof object with sloping pitch faces and eaves overhang (A-ROOF tag)."""
+
+    def __init__(
+        self,
+        id_str: str,
+        name: str = "",
+        tag: str = "A-ROOF",
+        boundary: Optional[List[Tuple[float, float]]] = None,
+        roof_type: str = "gable",
+        pitch: float = 30.0,
+        overhang: float = 0.5,
+        thickness: float = 0.2,
+        elevation: float = 0.0,
+        ridge_direction: str = "X",
+        properties: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(id_str, name=name, tag=tag or "A-ROOF", properties=properties)
+        self.boundary = boundary or []
+        self.roof_type = roof_type.lower() if roof_type else "gable"
+        self.pitch = float(pitch)
+        self.overhang = float(overhang)
+        self.thickness = float(thickness)
+        self.elevation = float(elevation)
+        self.ridge_direction = ridge_direction.upper() if ridge_direction else "X"
+
+    @property
+    def eaves_boundary(self) -> List[Tuple[float, float]]:
+        """Calculates boundary expanded by overhang distance."""
+        if not self.boundary:
+            return []
+        min_x = min(p[0] for p in self.boundary)
+        max_x = max(p[0] for p in self.boundary)
+        min_y = min(p[1] for p in self.boundary)
+        max_y = max(p[1] for p in self.boundary)
+        ov = self.overhang
+        return [
+            (min_x - ov, min_y - ov),
+            (max_x + ov, min_y - ov),
+            (max_x + ov, max_y + ov),
+            (min_x - ov, max_y + ov),
+        ]
+
+    @property
+    def area(self) -> float:
+        """Calculates 2D planar area of eaves boundary using Shoelace formula."""
+        poly = self.eaves_boundary or self.boundary
+        n = len(poly)
+        if n < 3:
+            return 0.0
+        area = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            area += poly[i][0] * poly[j][1]
+            area -= poly[j][0] * poly[i][1]
+        return abs(area) / 2.0
+
+    @property
+    def volume(self) -> float:
+        return self.area * self.thickness
+
+    def get_3d_bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        poly = self.eaves_boundary or self.boundary
+        if not poly:
+            return ((0.0, 0.0, self.elevation), (0.0, 0.0, self.elevation + self.thickness))
+        min_x = min(p[0] for p in poly)
+        max_x = max(p[0] for p in poly)
+        min_y = min(p[1] for p in poly)
+        max_y = max(p[1] for p in poly)
+        min_z = self.elevation
+
+        w_x = max_x - min_x
+        w_y = max_y - min_y
+        pitch_rad = math.radians(self.pitch)
+
+        if self.roof_type == "flat":
+            h_ridge = 0.0
+        elif self.roof_type == "shed":
+            span = w_x if self.ridge_direction == "X" else w_y
+            h_ridge = span * math.tan(pitch_rad)
+        elif self.roof_type == "hip":
+            span = min(w_x, w_y) / 2.0
+            h_ridge = span * math.tan(pitch_rad)
+        else:  # gable
+            span = (w_y / 2.0) if self.ridge_direction == "X" else (w_x / 2.0)
+            h_ridge = span * math.tan(pitch_rad)
+
+        max_z = self.elevation + h_ridge + self.thickness
+        return ((min_x, min_y, min_z), (max_x, max_y, max_z))
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = super().to_dict()
+        res.update(
+            {
+                "boundary": self.boundary,
+                "eaves_boundary": self.eaves_boundary,
+                "roof_type": self.roof_type,
+                "pitch": self.pitch,
+                "overhang": self.overhang,
+                "thickness": self.thickness,
+                "elevation": self.elevation,
+                "ridge_direction": self.ridge_direction,
+                "area": self.area,
+                "volume": self.volume,
+                "bounds": self.get_3d_bounds(),
+            }
+        )
+        return res
+
+
 class BuildingModel:
     """Root representation of the entire loaded .debim model."""
 
@@ -666,7 +830,7 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
         or []
     )
 
-    if not storeys_data and ("slabs" in manifest_data or "walls" in manifest_data or "columns" in manifest_data or "beams" in manifest_data or "elements" in manifest_data):
+    if not storeys_data and ("slabs" in manifest_data or "walls" in manifest_data or "columns" in manifest_data or "beams" in manifest_data or "footings" in manifest_data or "roofs" in manifest_data or "elements" in manifest_data):
         storeys_data = [{
             "id": "DEFAULT_STOREY",
             "name": "Default Level",
@@ -694,9 +858,27 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
         model.root_group.add_child(storey_group)
         storey_groups_map[st_id] = storey_group
 
-    # Process all extracted elements
+    # Extract all elements
     all_elements = extract_elements(manifest_data)
 
+    # First pass: build all Column objects and index them for Footing auto-placement lookup
+    columns_map: Dict[str, Column] = {}
+    for idx, elem in enumerate(all_elements):
+        cls_str = f"{elem.get('class') or ''} {elem.get('category') or ''} {elem.get('type') or ''}".lower()
+        if "col" in cls_str or "ifccolumn" in cls_str:
+            placement = elem.get("placement") or {}
+            st_target = placement.get("storey") or elem.get("storey") if isinstance(placement, dict) else elem.get("storey")
+            target_group = storey_groups_map.get(str(st_target)) if st_target else (model.storeys[0] if model.storeys else None)
+            if target_group is not None:
+                st_elev = target_group.elevation
+                st_height = target_group.height
+                col_obj = _build_column(elem, idx, st_elev, st_height, scale, ox, oy, grid_sys)
+                columns_map[col_obj.id] = col_obj
+                columns_map[col_obj.name] = col_obj
+                if col_obj.tag:
+                    columns_map[col_obj.tag] = col_obj
+
+    # Second pass: process all extracted elements
     for idx, elem in enumerate(all_elements):
         placement = elem.get("placement") or {}
         st_target = None
@@ -717,24 +899,189 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
         st_elev = target_group.elevation
         st_height = target_group.height
 
-        cls_type = str(
-            elem.get("class") or elem.get("type") or elem.get("category") or ""
-        ).lower()
+        cls_str = f"{elem.get('class') or ''} {elem.get('category') or ''} {elem.get('type') or ''}".lower()
 
-        if "col" in cls_type or "ifccolumn" in cls_type:
-            col_obj = _build_column(elem, idx, st_elev, st_height, scale, ox, oy, grid_sys)
-            target_group.add_child(col_obj)
-        elif "wall" in cls_type or "ifcwall" in cls_type:
+        if "col" in cls_str or "ifccolumn" in cls_str:
+            # Look up previously built column from columns_map
+            c_id = str(elem.get("id") or elem.get("tag") or f"COL_{idx+1}")
+            col_obj = columns_map.get(c_id)
+            if col_obj and col_obj not in target_group.children:
+                target_group.add_child(col_obj)
+        elif "footing" in cls_str or "ifcfooting" in cls_str or "pile" in cls_str:
+            footing_obj = _build_footing(elem, idx, st_elev, scale, ox, oy, grid_sys, columns_map=columns_map)
+            target_group.add_child(footing_obj)
+        elif "roof" in cls_str or "ifcroof" in cls_str:
+            roof_obj = _build_roof(elem, idx, st_elev, scale, ox, oy, grid_sys)
+            target_group.add_child(roof_obj)
+        elif "wall" in cls_str or "ifcwall" in cls_str:
             wall_obj = _build_wall(elem, idx, st_elev, st_height, scale, ox, oy, grid_sys)
             target_group.add_child(wall_obj)
-        elif "slab" in cls_type or "ifcslab" in cls_type or "footing" in cls_type or "ifcfooting" in cls_type:
+        elif "slab" in cls_str or "ifcslab" in cls_str:
             slab_obj = _build_slab(elem, idx, st_elev, scale, ox, oy, grid_sys)
             target_group.add_child(slab_obj)
-        elif "beam" in cls_type or "ifcbeam" in cls_type:
+        elif "beam" in cls_str or "ifcbeam" in cls_str:
             beam_obj = _build_beam(elem, idx, st_elev, scale, ox, oy, grid_sys)
             target_group.add_child(beam_obj)
 
     return model
+
+
+def _build_footing(
+    ft: Dict[str, Any],
+    idx: int,
+    storey_elevation: float,
+    scale: float,
+    ox: float,
+    oy: float,
+    grid_sys: Optional[GridSystem] = None,
+    columns_map: Optional[Dict[str, Column]] = None,
+) -> Footing:
+    grid_sys = grid_sys or GridSystem()
+    columns_map = columns_map or {}
+    placement = ft.get("placement") or {}
+    f_id = str(ft.get("id") or ft.get("tag") or f"FOOTING_{idx+1}")
+    f_name = str(ft.get("name") or f_id)
+    tag = str(ft.get("tag") or "S-FOOTING")
+
+    thickness = float(ft.get("thickness") or ft.get("depth") or ft.get("height") or 0.4) * scale
+
+    prof = ft.get("profile") or ft.get("section") or {}
+    if isinstance(prof, dict):
+        w = float(prof.get("width") or prof.get("b") or prof.get("x", 1.0)) * scale
+        d = float(prof.get("depth") or prof.get("length") or prof.get("h") or prof.get("y", w / scale)) * scale
+        section = (w, d)
+    elif isinstance(prof, (list, tuple)) and len(prof) >= 2:
+        section = (float(prof[0]) * scale, float(prof[1]) * scale)
+    else:
+        w = float(ft.get("width", ft.get("b", 1.0))) * scale
+        d = float(ft.get("depth", ft.get("length", ft.get("h", w / scale)))) * scale
+        section = (w, d)
+
+    raw_type = str(ft.get("footing_type") or ft.get("type") or ft.get("shape") or "isolated").lower()
+    if "pile" in raw_type:
+        footing_type = "pile_cap"
+    else:
+        footing_type = "isolated"
+
+    col_id = ft.get("column_id") or ft.get("column") or placement.get("column") or placement.get("column_id")
+    col_obj = columns_map.get(str(col_id)) if col_id and str(col_id) in columns_map else None
+
+    if col_obj is not None:
+        position = col_obj.position
+        if "elevation" in ft or "elevation" in placement or "offset" in ft:
+            local_offset = float(ft.get("offset") or ft.get("elevation") or placement.get("elevation") or 0.0) * scale
+            abs_elevation = storey_elevation + local_offset
+        else:
+            abs_elevation = col_obj.elevation - thickness
+    else:
+        grid_spec = placement.get("grid") or ft.get("grid") or placement.get("position") or ft.get("position") or ft.get("location")
+        if grid_spec is not None:
+            p_res = grid_sys.resolve_point(grid_spec)
+            position = (p_res[0] * scale + ox, p_res[1] * scale + oy)
+        else:
+            position = (0.0, 0.0)
+
+        local_offset = float(ft.get("offset") or ft.get("elevation") or placement.get("elevation") or 0.0) * scale
+        abs_elevation = storey_elevation + local_offset
+
+    return Footing(
+        id_str=f_id,
+        name=f_name,
+        tag=tag,
+        position=position,
+        section=section,
+        thickness=thickness,
+        elevation=abs_elevation,
+        footing_type=footing_type,
+        column_id=str(col_id) if col_id else None,
+        properties=ft.get("properties"),
+    )
+
+
+def _build_roof(
+    rf: Dict[str, Any],
+    idx: int,
+    storey_elevation: float,
+    scale: float,
+    ox: float,
+    oy: float,
+    grid_sys: Optional[GridSystem] = None,
+) -> Roof:
+    grid_sys = grid_sys or GridSystem()
+    placement = rf.get("placement") or {}
+    r_id = str(rf.get("id") or rf.get("tag") or f"ROOF_{idx+1}")
+    r_name = str(rf.get("name") or r_id)
+    tag = str(rf.get("tag") or "A-ROOF")
+
+    raw_roof_type = str(rf.get("roof_type") or rf.get("type") or "gable").lower()
+    if "gable" in raw_roof_type or "จั่ว" in raw_roof_type:
+        roof_type = "gable"
+    elif "hip" in raw_roof_type or "ปั้นหยา" in raw_roof_type:
+        roof_type = "hip"
+    elif "shed" in raw_roof_type or "เพิง" in raw_roof_type or "skillion" in raw_roof_type:
+        roof_type = "shed"
+    elif "flat" in raw_roof_type or "ดาดฟ้า" in raw_roof_type:
+        roof_type = "flat"
+    else:
+        roof_type = "gable"
+
+    pitch = float(rf.get("pitch") or rf.get("pitch_angle") or rf.get("angle") or (0.0 if roof_type == "flat" else 30.0))
+    overhang = float(rf.get("overhang") or rf.get("eaves") or 0.5) * scale
+    thickness = float(rf.get("thickness") or rf.get("depth") or 0.2) * scale
+
+    local_offset = float(rf.get("offset") or rf.get("elevation") or placement.get("elevation") or 0.0) * scale
+    abs_elevation = storey_elevation + local_offset
+
+    ridge_direction = str(rf.get("ridge_direction") or rf.get("direction") or "X").upper()
+
+    raw_boundary = (
+        rf.get("boundary")
+        or rf.get("polygon")
+        or rf.get("points")
+        or placement.get("boundary")
+        or []
+    )
+
+    boundary: List[Tuple[float, float]] = []
+    if raw_boundary:
+        for pt in raw_boundary:
+            p_res = grid_sys.resolve_point(pt)
+            boundary.append((p_res[0] * scale + ox, p_res[1] * scale + oy))
+    else:
+        from_g = placement.get("from_grid") or rf.get("from_grid")
+        to_g = placement.get("to_grid") or rf.get("to_grid")
+        if from_g and to_g:
+            p1 = grid_sys.resolve_point(from_g)
+            p2 = grid_sys.resolve_point(to_g)
+            boundary = [
+                (p1[0] * scale + ox, p1[1] * scale + oy),
+                (p2[0] * scale + ox, p1[1] * scale + oy),
+                (p2[0] * scale + ox, p2[1] * scale + oy),
+                (p1[0] * scale + ox, p2[1] * scale + oy),
+            ]
+        else:
+            w = float(rf.get("width", 10.0)) * scale
+            d = float(rf.get("depth", 8.0)) * scale
+            boundary = [
+                (ox, oy),
+                (ox + w, oy),
+                (ox + w, oy + d),
+                (ox, oy + d),
+            ]
+
+    return Roof(
+        id_str=r_id,
+        name=r_name,
+        tag=tag,
+        boundary=boundary,
+        roof_type=roof_type,
+        pitch=pitch,
+        overhang=overhang,
+        thickness=thickness,
+        elevation=abs_elevation,
+        ridge_direction=ridge_direction,
+        properties=rf.get("properties"),
+    )
 
 
 def _build_slab(
@@ -1001,4 +1348,3 @@ def _build_beam(
         elevation=abs_elevation,
         properties=props,
     )
-

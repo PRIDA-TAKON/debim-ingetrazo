@@ -5,7 +5,7 @@ Unit tests for 3D entity geometry builder (debim_ingetrazo/builder.py).
 import math
 import pytest
 from debim_ingetrazo.parser import parse_debim_str
-from debim_ingetrazo.builder import build_geometry, Slab, Wall, Column, Beam, Group
+from debim_ingetrazo.builder import build_geometry, Slab, Wall, Column, Beam, Footing, Roof, Group
 
 
 def test_builder_storeys_and_tags():
@@ -302,3 +302,174 @@ def test_dual_mode_ifc_elements_and_grid_faces():
     grid_faces = DebimPlugin._build_grid_faces(model.grid_system)
     # 4 grid lines * (1 line ribbon + 2 balloons) = 12 faces
     assert len(grid_faces) == 12
+
+
+def test_footing_object_and_auto_placement():
+    # 1. Direct Footing class unit test
+    f_unit = Footing(
+        id_str="F1",
+        name="Isolated Footing F1",
+        tag="S-FOOTING",
+        position=(2.0, 3.0),
+        section=(1.2, 1.2),
+        thickness=0.5,
+        elevation=-0.5,
+        footing_type="isolated",
+        column_id="C1",
+    )
+    assert f_unit.id == "F1"
+    assert f_unit.tag == "S-FOOTING"
+    assert f_unit.volume == pytest.approx(1.2 * 1.2 * 0.5)
+    bounds = f_unit.get_3d_bounds()
+    assert bounds == ((1.4, 2.4, -0.5), (2.6, 3.6, 0.0))
+    d_info = f_unit.to_dict()
+    assert d_info["type"] == "Footing"
+    assert d_info["footing_type"] == "isolated"
+    assert d_info["column_id"] == "C1"
+
+    # 2. Manifest parsing & Column auto-placement
+    manifest_yaml = """
+    project:
+      name: Footing Test Project
+      units: m
+    storeys:
+      - id: GF
+        elevation: 0.0
+        columns:
+          - id: C1
+            position: [4.0, 5.0]
+            section: [0.3, 0.3]
+            height: 3.0
+            elevation: 0.0
+        footings:
+          - id: F_AUTO
+            column: "C1"
+            section: [1.5, 1.5]
+            thickness: 0.6
+          - id: F_PILE
+            tag: "S-FOOTING"
+            type: "pile_cap"
+            section: [2.0, 2.0]
+            thickness: 0.8
+            position: [10.0, 10.0]
+            elevation: -1.0
+    """
+    data = parse_debim_str(manifest_yaml)
+    model = build_geometry(data)
+
+    st = model.storeys[0]
+    footings = [c for c in st.children if isinstance(c, Footing)]
+    assert len(footings) == 2
+
+    # Auto-placed footing under column C1
+    f_auto = next(f for f in footings if f.id == "F_AUTO")
+    assert f_auto.position == (4.0, 5.0)
+    assert f_auto.thickness == 0.6
+    # Auto elevation = col.elevation - thickness = 0.0 - 0.6 = -0.6
+    assert f_auto.elevation == pytest.approx(-0.6)
+    assert f_auto.column_id == "C1"
+
+    # Explicit pile cap footing
+    f_pile = next(f for f in footings if f.id == "F_PILE")
+    assert f_pile.footing_type == "pile_cap"
+    assert f_pile.position == (10.0, 10.0)
+    assert f_pile.elevation == -1.0
+
+
+def test_roof_object_types_and_geometry():
+    # 1. Direct Roof class unit test
+    roof_gable = Roof(
+        id_str="RF_GABLE",
+        name="Main Roof Gable",
+        boundary=[(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)],
+        roof_type="gable",
+        pitch=30.0,
+        overhang=0.5,
+        thickness=0.2,
+        elevation=6.0,
+        ridge_direction="X",
+    )
+    assert roof_gable.roof_type == "gable"
+    assert roof_gable.overhang == 0.5
+    # eaves_boundary expanded by 0.5m on all sides: [-0.5, 10.5] x [-0.5, 8.5]
+    eb = roof_gable.eaves_boundary
+    assert eb == [(-0.5, -0.5), (10.5, -0.5), (10.5, 8.5), (-0.5, 8.5)]
+    # Eaves width = 11.0, depth = 9.0 -> area = 99.0
+    assert roof_gable.area == pytest.approx(99.0)
+    assert roof_gable.volume == pytest.approx(99.0 * 0.2)
+    # Bounds: ridge height above eaves = (9.0 / 2) * tan(30deg) = 4.5 * 0.57735 = ~2.598m
+    bounds = roof_gable.get_3d_bounds()
+    assert bounds[0] == (-0.5, -0.5, 6.0)
+    assert bounds[1][2] == pytest.approx(6.0 + 4.5 * math.tan(math.radians(30.0)) + 0.2)
+
+    # 2. Manifest parsing for all 4 roof types: Gable, Hip, Shed, Flat
+    manifest_yaml = """
+    schema: "IFC4-Minimal"
+    project:
+      name: "Roof Types Test"
+    spatial_structure:
+      storeys:
+        - id: "ROOF_LEVEL"
+          elevation: 6.0
+    elements:
+      - class: IfcRoof
+        id: "RF_1"
+        type: "gable"
+        pitch: 30
+        eaves: 0.6
+        ridge_direction: "X"
+        boundary: [[0, 0], [12, 0], [12, 8], [0, 8]]
+        placement:
+          storey: "ROOF_LEVEL"
+
+      - class: IfcRoof
+        id: "RF_2"
+        type: "hip"
+        pitch: 25
+        eaves: 0.5
+        boundary: [[0, 0], [10, 0], [10, 6], [0, 6]]
+        placement:
+          storey: "ROOF_LEVEL"
+
+      - class: IfcRoof
+        id: "RF_3"
+        type: "shed"
+        pitch: 15
+        eaves: 0.4
+        ridge_direction: "Y"
+        boundary: [[0, 0], [8, 0], [8, 5], [0, 5]]
+        placement:
+          storey: "ROOF_LEVEL"
+
+      - class: IfcRoof
+        id: "RF_4"
+        type: "flat"
+        pitch: 0
+        eaves: 0.2
+        boundary: [[0, 0], [6, 0], [6, 6], [0, 6]]
+        placement:
+          storey: "ROOF_LEVEL"
+    """
+    data = parse_debim_str(manifest_yaml)
+    model = build_geometry(data)
+
+    st = model.storeys[0]
+    roofs = [c for c in st.children if isinstance(c, Roof)]
+    assert len(roofs) == 4
+
+    rf1 = next(r for r in roofs if r.id == "RF_1")
+    assert rf1.roof_type == "gable"
+    assert rf1.pitch == 30.0
+    assert rf1.overhang == 0.6
+
+    rf2 = next(r for r in roofs if r.id == "RF_2")
+    assert rf2.roof_type == "hip"
+    assert rf2.pitch == 25.0
+
+    rf3 = next(r for r in roofs if r.id == "RF_3")
+    assert rf3.roof_type == "shed"
+    assert rf3.pitch == 15.0
+
+    rf4 = next(r for r in roofs if r.id == "RF_4")
+    assert rf4.roof_type == "flat"
+    assert rf4.pitch == 0.0
