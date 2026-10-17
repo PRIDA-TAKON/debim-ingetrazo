@@ -152,3 +152,77 @@ def test_debim_plugin_build_roof_faces():
     faces_flat = DebimPlugin._build_roof_faces(roof_flat)
     # Flat roof slab has bottom + top + 4 sides = 6 quad faces
     assert len(faces_flat) == 6
+
+
+def test_debim_plugin_build_stair_faces():
+    from debim_ingetrazo.builder import Stair
+
+    stair = Stair(
+        id_str="STAIR_1",
+        start=(0.0, 0.0),
+        end=(4.0, 0.0),
+        width=1.0,
+        height=3.0,
+        num_steps=10,
+        landing_depth=1.0,
+        elevation=0.0,
+    )
+    faces = DebimPlugin._build_stair_faces(stair)
+
+    # 10 steps * 6 faces/box + 1 landing * 6 faces/box = 66 quad faces
+    assert len(faces) == 66
+    for face in faces:
+        assert len(face) == 4
+        for pt in face:
+            assert len(pt) == 3
+
+
+def test_debim_plugin_build_space_faces():
+    from debim_ingetrazo.builder import Space
+
+    space = Space(
+        id_str="ROOM_1",
+        boundary=[(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)],
+        height=3.0,
+        elevation=0.0,
+    )
+    faces = DebimPlugin._build_space_faces(space)
+
+    # Rectangular room -> floor + ceiling + 4 side walls = 6 faces
+    assert len(faces) == 6
+    for face in faces:
+        assert len(face) == 4
+        for pt in face:
+            assert len(pt) == 3
+
+
+def test_debim_plugin_build_door_and_window_faces():
+    from debim_ingetrazo.builder import Door, Window
+
+    # 1. Door faces: top frame, left jamb, right jamb, leaf panel -> 4 box components * 6 faces = 24 faces
+    door = Door(
+        id_str="D_TEST",
+        position=(1.0, 0.0),
+        width=0.9,
+        height=2.1,
+        depth=0.1,
+        direction=0.0,
+    )
+    door_faces = DebimPlugin._build_door_faces(door)
+    assert len(door_faces) == 24
+    for face in door_faces:
+        assert len(face) == 4
+
+    # 2. Window faces: top, bottom, left jamb, right jamb, glass panel -> 5 box components * 6 faces = 30 faces
+    window = Window(
+        id_str="W_TEST",
+        position=(3.0, 0.0),
+        width=1.2,
+        height=1.5,
+        depth=0.1,
+        direction=0.0,
+    )
+    window_faces = DebimPlugin._build_window_faces(window)
+    assert len(window_faces) == 30
+    for face in window_faces:
+        assert len(face) == 4

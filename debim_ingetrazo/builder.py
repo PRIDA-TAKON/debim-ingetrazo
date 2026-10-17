@@ -334,6 +334,350 @@ class Slab(GeometryObject):
         return res
 
 
+class Stair(GeometryObject):
+    """
+    Parametric Stair object (A-STAIR tag).
+    Generates parametric steps (risers, treads, and landing plates).
+    """
+
+    def __init__(
+        self,
+        id_str: str,
+        name: str = "",
+        tag: str = "A-STAIR",
+        start: Tuple[float, float] = (0.0, 0.0),
+        end: Optional[Tuple[float, float]] = None,
+        width: float = 1.0,
+        height: float = 3.0,
+        num_steps: int = 16,
+        landing_depth: float = 0.0,
+        landing_thickness: float = 0.15,
+        elevation: float = 0.0,
+        stair_type: str = "straight",
+        properties: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(id_str, name=name, tag=tag or "A-STAIR", properties=properties)
+        self.start = start
+        self.width = width
+        self.height = height
+        self.num_steps = max(1, int(num_steps))
+        self.landing_depth = landing_depth
+        self.landing_thickness = landing_thickness
+        self.elevation = elevation
+        self.stair_type = stair_type.lower() if stair_type else "straight"
+
+        if end is not None:
+            self.end = end
+        else:
+            default_run = self.num_steps * 0.28 + self.landing_depth
+            self.end = (self.start[0] + default_run, self.start[1])
+
+    @property
+    def riser_height(self) -> float:
+        return self.height / self.num_steps
+
+    @property
+    def total_run(self) -> float:
+        dx = self.end[0] - self.start[0]
+        dy = self.end[1] - self.start[1]
+        return math.hypot(dx, dy)
+
+    @property
+    def tread_depth(self) -> float:
+        run_for_steps = max(0.0, self.total_run - self.landing_depth)
+        return run_for_steps / self.num_steps if self.num_steps > 0 else 0.28
+
+    @property
+    def volume(self) -> float:
+        step_vol = sum(self.width * self.tread_depth * (self.riser_height * (i + 1)) for i in range(self.num_steps))
+        landing_vol = self.width * self.landing_depth * self.landing_thickness
+        return step_vol + landing_vol
+
+    def get_3d_bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        dx = self.end[0] - self.start[0]
+        dy = self.end[1] - self.start[1]
+        len_val = self.total_run
+        if len_val == 0:
+            nx, ny = 0.0, 0.0
+        else:
+            nx, ny = -dy / len_val * (self.width / 2.0), dx / len_val * (self.width / 2.0)
+
+        corners = [
+            (self.start[0] + nx, self.start[1] + ny),
+            (self.start[0] - nx, self.start[1] - ny),
+            (self.end[0] + nx, self.end[1] + ny),
+            (self.end[0] - nx, self.end[1] - ny),
+        ]
+
+        min_x = min(p[0] for p in corners)
+        max_x = max(p[0] for p in corners)
+        min_y = min(p[1] for p in corners)
+        max_y = max(p[1] for p in corners)
+        min_z = self.elevation
+        max_z = self.elevation + self.height
+        return ((min_x, min_y, min_z), (max_x, max_y, max_z))
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = super().to_dict()
+        res.update(
+            {
+                "start": self.start,
+                "end": self.end,
+                "width": self.width,
+                "height": self.height,
+                "num_steps": self.num_steps,
+                "riser_height": self.riser_height,
+                "tread_depth": self.tread_depth,
+                "landing_depth": self.landing_depth,
+                "landing_thickness": self.landing_thickness,
+                "elevation": self.elevation,
+                "stair_type": self.stair_type,
+                "volume": self.volume,
+                "bounds": self.get_3d_bounds(),
+            }
+        )
+        return res
+
+
+class Space(GeometryObject):
+    """
+    Architectural Space / Zone object (A-SPACE tag).
+    Calculates room net floor area (m²) and air volume (m³).
+    """
+
+    def __init__(
+        self,
+        id_str: str,
+        name: str = "",
+        tag: str = "A-SPACE",
+        boundary: Optional[List[Tuple[float, float]]] = None,
+        height: float = 3.0,
+        elevation: float = 0.0,
+        number: str = "",
+        zone: str = "",
+        properties: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(id_str, name=name, tag=tag or "A-SPACE", properties=properties)
+        self.boundary = boundary or []
+        self.height = height
+        self.elevation = elevation
+        self.number = number
+        self.zone = zone
+
+    @property
+    def area(self) -> float:
+        """Calculates room net floor area (m²) using Shoelace formula."""
+        n = len(self.boundary)
+        if n < 3:
+            return 0.0
+        area = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            area += self.boundary[i][0] * self.boundary[j][1]
+            area -= self.boundary[j][0] * self.boundary[i][1]
+        return abs(area) / 2.0
+
+    @property
+    def volume(self) -> float:
+        """Calculates room air volume (m³)."""
+        return self.area * self.height
+
+    def get_3d_bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        if not self.boundary:
+            return ((0.0, 0.0, self.elevation), (0.0, 0.0, self.elevation + self.height))
+        min_x = min(p[0] for p in self.boundary)
+        max_x = max(p[0] for p in self.boundary)
+        min_y = min(p[1] for p in self.boundary)
+        max_y = max(p[1] for p in self.boundary)
+        min_z = self.elevation
+        max_z = self.elevation + self.height
+        return ((min_x, min_y, min_z), (max_x, max_y, max_z))
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = super().to_dict()
+        res.update(
+            {
+                "boundary": self.boundary,
+                "height": self.height,
+                "elevation": self.elevation,
+                "number": self.number,
+                "zone": self.zone,
+                "area": self.area,
+                "volume": self.volume,
+                "bounds": self.get_3d_bounds(),
+            }
+        )
+        return res
+
+
+class Door(GeometryObject):
+    """
+    Parametric Door component entity with 3D frames and panel (A-DOOR tag).
+    """
+
+    def __init__(
+        self,
+        id_str: str,
+        name: str = "",
+        tag: str = "A-DOOR",
+        position: Tuple[float, float] = (0.0, 0.0),
+        width: float = 0.9,
+        height: float = 2.1,
+        sill_height: float = 0.0,
+        depth: float = 0.1,
+        frame_width: float = 0.05,
+        panel_thickness: float = 0.04,
+        elevation: float = 0.0,
+        direction: float = 0.0,
+        door_type: str = "single",
+        host_wall_id: Optional[str] = None,
+        properties: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(id_str, name=name, tag=tag or "A-DOOR", properties=properties)
+        self.position = position
+        self.width = width
+        self.height = height
+        self.sill_height = sill_height
+        self.depth = depth
+        self.frame_width = frame_width
+        self.panel_thickness = panel_thickness
+        self.elevation = elevation
+        self.direction = direction
+        self.door_type = door_type
+        self.host_wall_id = host_wall_id
+
+    @property
+    def volume(self) -> float:
+        """Volume of 3D door frame and door panel."""
+        w_inner = max(0.0, self.width - 2 * self.frame_width)
+        h_inner = max(0.0, self.height - self.frame_width)
+        frame_vol = (self.width * self.depth * self.frame_width) + (2 * h_inner * self.depth * self.frame_width)
+        panel_vol = w_inner * self.panel_thickness * h_inner
+        return frame_vol + panel_vol
+
+    def get_3d_bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        x, y = self.position
+        z_min = self.elevation + self.sill_height
+        z_max = z_min + self.height
+        rad = math.radians(self.direction)
+        cos_a, sin_a = math.cos(rad), math.sin(rad)
+
+        hw, hd = self.width / 2.0, self.depth / 2.0
+        local_corners = [(-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd)]
+        rot_corners = [(x + cx * cos_a - cy * sin_a, y + cx * sin_a + cy * cos_a) for cx, cy in local_corners]
+
+        min_x = min(p[0] for p in rot_corners)
+        max_x = max(p[0] for p in rot_corners)
+        min_y = min(p[1] for p in rot_corners)
+        max_y = max(p[1] for p in rot_corners)
+        return ((min_x, min_y, z_min), (max_x, max_y, z_max))
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = super().to_dict()
+        res.update(
+            {
+                "position": self.position,
+                "width": self.width,
+                "height": self.height,
+                "sill_height": self.sill_height,
+                "depth": self.depth,
+                "frame_width": self.frame_width,
+                "panel_thickness": self.panel_thickness,
+                "elevation": self.elevation,
+                "direction": self.direction,
+                "door_type": self.door_type,
+                "host_wall_id": self.host_wall_id,
+                "volume": self.volume,
+                "bounds": self.get_3d_bounds(),
+            }
+        )
+        return res
+
+
+class Window(GeometryObject):
+    """
+    Parametric Window component entity with 3D frames and glazed panels (A-WINDOW tag).
+    """
+
+    def __init__(
+        self,
+        id_str: str,
+        name: str = "",
+        tag: str = "A-WINDOW",
+        position: Tuple[float, float] = (0.0, 0.0),
+        width: float = 1.2,
+        height: float = 1.5,
+        sill_height: float = 0.9,
+        depth: float = 0.1,
+        frame_width: float = 0.05,
+        glass_thickness: float = 0.01,
+        elevation: float = 0.0,
+        direction: float = 0.0,
+        window_type: str = "casement",
+        host_wall_id: Optional[str] = None,
+        properties: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(id_str, name=name, tag=tag or "A-WINDOW", properties=properties)
+        self.position = position
+        self.width = width
+        self.height = height
+        self.sill_height = sill_height
+        self.depth = depth
+        self.frame_width = frame_width
+        self.glass_thickness = glass_thickness
+        self.elevation = elevation
+        self.direction = direction
+        self.window_type = window_type
+        self.host_wall_id = host_wall_id
+
+    @property
+    def volume(self) -> float:
+        """Volume of 3D window frame and glazed glass panel."""
+        w_inner = max(0.0, self.width - 2 * self.frame_width)
+        h_inner = max(0.0, self.height - 2 * self.frame_width)
+        frame_vol = (2 * self.width * self.depth * self.frame_width) + (2 * h_inner * self.depth * self.frame_width)
+        glass_vol = w_inner * self.glass_thickness * h_inner
+        return frame_vol + glass_vol
+
+    def get_3d_bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        x, y = self.position
+        z_min = self.elevation + self.sill_height
+        z_max = z_min + self.height
+        rad = math.radians(self.direction)
+        cos_a, sin_a = math.cos(rad), math.sin(rad)
+
+        hw, hd = self.width / 2.0, self.depth / 2.0
+        local_corners = [(-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd)]
+        rot_corners = [(x + cx * cos_a - cy * sin_a, y + cx * sin_a + cy * cos_a) for cx, cy in local_corners]
+
+        min_x = min(p[0] for p in rot_corners)
+        max_x = max(p[0] for p in rot_corners)
+        min_y = min(p[1] for p in rot_corners)
+        max_y = max(p[1] for p in rot_corners)
+        return ((min_x, min_y, z_min), (max_x, max_y, z_max))
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = super().to_dict()
+        res.update(
+            {
+                "position": self.position,
+                "width": self.width,
+                "height": self.height,
+                "sill_height": self.sill_height,
+                "depth": self.depth,
+                "frame_width": self.frame_width,
+                "glass_thickness": self.glass_thickness,
+                "elevation": self.elevation,
+                "direction": self.direction,
+                "window_type": self.window_type,
+                "host_wall_id": self.host_wall_id,
+                "volume": self.volume,
+                "bounds": self.get_3d_bounds(),
+            }
+        )
+        return res
+
+
 class Opening:
     """Opening in wall volume (doors, windows, voids)."""
 
@@ -830,7 +1174,7 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
         or []
     )
 
-    if not storeys_data and ("slabs" in manifest_data or "walls" in manifest_data or "columns" in manifest_data or "beams" in manifest_data or "footings" in manifest_data or "roofs" in manifest_data or "elements" in manifest_data):
+    if not storeys_data and ("slabs" in manifest_data or "walls" in manifest_data or "columns" in manifest_data or "beams" in manifest_data or "footings" in manifest_data or "roofs" in manifest_data or "stairs" in manifest_data or "spaces" in manifest_data or "doors" in manifest_data or "windows" in manifest_data or "rooms" in manifest_data or "zones" in manifest_data or "elements" in manifest_data):
         storeys_data = [{
             "id": "DEFAULT_STOREY",
             "name": "Default Level",
@@ -913,6 +1257,18 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
         elif "roof" in cls_str or "ifcroof" in cls_str:
             roof_obj = _build_roof(elem, idx, st_elev, scale, ox, oy, grid_sys)
             target_group.add_child(roof_obj)
+        elif "stair" in cls_str or "ifcstair" in cls_str:
+            stair_obj = _build_stair(elem, idx, st_elev, st_height, scale, ox, oy, grid_sys)
+            target_group.add_child(stair_obj)
+        elif "space" in cls_str or "ifcspace" in cls_str or "room" in cls_str or "zone" in cls_str:
+            space_obj = _build_space(elem, idx, st_elev, st_height, scale, ox, oy, grid_sys)
+            target_group.add_child(space_obj)
+        elif "door" in cls_str or "ifcdoor" in cls_str:
+            door_obj = _build_door(elem, idx, st_elev, scale, ox, oy, grid_sys)
+            target_group.add_child(door_obj)
+        elif "window" in cls_str or "ifcwindow" in cls_str:
+            window_obj = _build_window(elem, idx, st_elev, scale, ox, oy, grid_sys)
+            target_group.add_child(window_obj)
         elif "wall" in cls_str or "ifcwall" in cls_str:
             wall_obj = _build_wall(elem, idx, st_elev, st_height, scale, ox, oy, grid_sys)
             target_group.add_child(wall_obj)
@@ -1347,4 +1703,258 @@ def _build_beam(
         depth=depth,
         elevation=abs_elevation,
         properties=props,
+    )
+
+
+def _build_stair(
+    st: Dict[str, Any],
+    idx: int,
+    storey_elevation: float,
+    default_height: float,
+    scale: float,
+    ox: float,
+    oy: float,
+    grid_sys: Optional[GridSystem] = None,
+) -> Stair:
+    grid_sys = grid_sys or GridSystem()
+    placement = st.get("placement") or {}
+    s_id = str(st.get("id") or st.get("tag") or f"STAIR_{idx+1}")
+    s_name = str(st.get("name") or s_id)
+    tag = str(st.get("tag") or "A-STAIR")
+
+    width = float(st.get("width") or 1.0) * scale
+    height = float(st.get("height") or st.get("rise") or (default_height / scale)) * scale
+    landing_depth = float(st.get("landing_depth") or st.get("landing") or 0.0) * scale
+    landing_thickness = float(st.get("landing_thickness") or st.get("thickness") or 0.15) * scale
+
+    raw_steps = st.get("num_steps") or st.get("steps") or st.get("risers")
+    if raw_steps is not None:
+        num_steps = max(1, int(raw_steps))
+    else:
+        num_steps = max(1, int(round(height / (0.175 * scale))))
+
+    local_offset = float(st.get("offset") or st.get("elevation") or placement.get("elevation") or 0.0) * scale
+    abs_elevation = storey_elevation + local_offset
+
+    stair_type = str(st.get("stair_type") or st.get("type") or "straight")
+
+    from_g = placement.get("from_grid") or st.get("from_grid") or st.get("start")
+    to_g = placement.get("to_grid") or st.get("to_grid") or st.get("end")
+
+    if from_g is not None and to_g is not None:
+        p1 = grid_sys.resolve_point(from_g)
+        p2 = grid_sys.resolve_point(to_g)
+        start = (p1[0] * scale + ox, p1[1] * scale + oy)
+        end = (p2[0] * scale + ox, p2[1] * scale + oy)
+    elif from_g is not None:
+        p1 = grid_sys.resolve_point(from_g)
+        start = (p1[0] * scale + ox, p1[1] * scale + oy)
+        end = None
+    else:
+        g_pt = placement.get("grid") or st.get("grid") or placement.get("position") or st.get("position")
+        if g_pt is not None:
+            p1 = grid_sys.resolve_point(g_pt)
+            start = (p1[0] * scale + ox, p1[1] * scale + oy)
+        else:
+            start = (ox, oy)
+        end = None
+
+    return Stair(
+        id_str=s_id,
+        name=s_name,
+        tag=tag,
+        start=start,
+        end=end,
+        width=width,
+        height=height,
+        num_steps=num_steps,
+        landing_depth=landing_depth,
+        landing_thickness=landing_thickness,
+        elevation=abs_elevation,
+        stair_type=stair_type,
+        properties=st.get("properties"),
+    )
+
+
+def _build_space(
+    sp: Dict[str, Any],
+    idx: int,
+    storey_elevation: float,
+    default_height: float,
+    scale: float,
+    ox: float,
+    oy: float,
+    grid_sys: Optional[GridSystem] = None,
+) -> Space:
+    grid_sys = grid_sys or GridSystem()
+    placement = sp.get("placement") or {}
+    s_id = str(sp.get("id") or sp.get("tag") or f"SPACE_{idx+1}")
+    s_name = str(sp.get("name") or s_id)
+    tag = str(sp.get("tag") or "A-SPACE")
+
+    height = float(sp.get("height") or (default_height / scale)) * scale
+    number = str(sp.get("number") or sp.get("room_number") or "")
+    zone = str(sp.get("zone") or sp.get("category") or "")
+
+    local_offset = float(sp.get("offset") or sp.get("elevation") or placement.get("elevation") or 0.0) * scale
+    abs_elevation = storey_elevation + local_offset
+
+    raw_boundary = (
+        sp.get("boundary")
+        or sp.get("polygon")
+        or sp.get("points")
+        or placement.get("boundary")
+        or []
+    )
+
+    boundary: List[Tuple[float, float]] = []
+    if raw_boundary:
+        for pt in raw_boundary:
+            p_res = grid_sys.resolve_point(pt)
+            boundary.append((p_res[0] * scale + ox, p_res[1] * scale + oy))
+    else:
+        from_g = placement.get("from_grid") or sp.get("from_grid")
+        to_g = placement.get("to_grid") or sp.get("to_grid")
+        if from_g and to_g:
+            p1 = grid_sys.resolve_point(from_g)
+            p2 = grid_sys.resolve_point(to_g)
+            boundary = [
+                (p1[0] * scale + ox, p1[1] * scale + oy),
+                (p2[0] * scale + ox, p1[1] * scale + oy),
+                (p2[0] * scale + ox, p2[1] * scale + oy),
+                (p1[0] * scale + ox, p2[1] * scale + oy),
+            ]
+        else:
+            g_pt = placement.get("grid") or sp.get("grid") or placement.get("position") or sp.get("position")
+            if g_pt:
+                cx, cy = grid_sys.resolve_point(g_pt)
+                hw = float(sp.get("width", 4.0)) / 2.0
+                hd = float(sp.get("depth", 4.0)) / 2.0
+                boundary = [
+                    ((cx - hw) * scale + ox, (cy - hd) * scale + oy),
+                    ((cx + hw) * scale + ox, (cy - hd) * scale + oy),
+                    ((cx + hw) * scale + ox, (cy + hd) * scale + oy),
+                    ((cx - hw) * scale + ox, (cy + hd) * scale + oy),
+                ]
+
+    return Space(
+        id_str=s_id,
+        name=s_name,
+        tag=tag,
+        boundary=boundary,
+        height=height,
+        elevation=abs_elevation,
+        number=number,
+        zone=zone,
+        properties=sp.get("properties"),
+    )
+
+
+def _build_door(
+    dr: Dict[str, Any],
+    idx: int,
+    storey_elevation: float,
+    scale: float,
+    ox: float,
+    oy: float,
+    grid_sys: Optional[GridSystem] = None,
+) -> Door:
+    grid_sys = grid_sys or GridSystem()
+    placement = dr.get("placement") or {}
+    d_id = str(dr.get("id") or dr.get("tag") or f"DOOR_{idx+1}")
+    d_name = str(dr.get("name") or d_id)
+    tag = str(dr.get("tag") or "A-DOOR")
+
+    width = float(dr.get("width") or 0.9) * scale
+    height = float(dr.get("height") or 2.1) * scale
+    sill_height = float(dr.get("sill_height") or dr.get("sill") or 0.0) * scale
+    depth = float(dr.get("depth") or dr.get("thickness") or 0.1) * scale
+    frame_width = float(dr.get("frame_width") or 0.05) * scale
+    panel_thickness = float(dr.get("panel_thickness") or 0.04) * scale
+
+    local_offset = float(dr.get("offset") or dr.get("elevation") or placement.get("elevation") or 0.0) * scale
+    abs_elevation = storey_elevation + local_offset
+
+    direction = float(dr.get("direction") or dr.get("angle") or dr.get("orientation") or 0.0)
+    door_type = str(dr.get("door_type") or dr.get("type") or "single")
+    host_wall_id = str(dr.get("host_wall_id") or dr.get("wall")) if (dr.get("host_wall_id") or dr.get("wall")) else None
+
+    grid_spec = placement.get("grid") or dr.get("grid") or placement.get("position") or dr.get("position") or dr.get("location")
+    if grid_spec is not None:
+        p_res = grid_sys.resolve_point(grid_spec)
+        position = (p_res[0] * scale + ox, p_res[1] * scale + oy)
+    else:
+        position = (ox, oy)
+
+    return Door(
+        id_str=d_id,
+        name=d_name,
+        tag=tag,
+        position=position,
+        width=width,
+        height=height,
+        sill_height=sill_height,
+        depth=depth,
+        frame_width=frame_width,
+        panel_thickness=panel_thickness,
+        elevation=abs_elevation,
+        direction=direction,
+        door_type=door_type,
+        host_wall_id=host_wall_id,
+        properties=dr.get("properties"),
+    )
+
+
+def _build_window(
+    win: Dict[str, Any],
+    idx: int,
+    storey_elevation: float,
+    scale: float,
+    ox: float,
+    oy: float,
+    grid_sys: Optional[GridSystem] = None,
+) -> Window:
+    grid_sys = grid_sys or GridSystem()
+    placement = win.get("placement") or {}
+    w_id = str(win.get("id") or win.get("tag") or f"WIN_{idx+1}")
+    w_name = str(win.get("name") or w_id)
+    tag = str(win.get("tag") or "A-WINDOW")
+
+    width = float(win.get("width") or 1.2) * scale
+    height = float(win.get("height") or 1.5) * scale
+    sill_height = float(win.get("sill_height") or win.get("sill") or 0.9) * scale
+    depth = float(win.get("depth") or win.get("thickness") or 0.1) * scale
+    frame_width = float(win.get("frame_width") or 0.05) * scale
+    glass_thickness = float(win.get("glass_thickness") or 0.01) * scale
+
+    local_offset = float(win.get("offset") or win.get("elevation") or placement.get("elevation") or 0.0) * scale
+    abs_elevation = storey_elevation + local_offset
+
+    direction = float(win.get("direction") or win.get("angle") or win.get("orientation") or 0.0)
+    window_type = str(win.get("window_type") or win.get("type") or "casement")
+    host_wall_id = str(win.get("host_wall_id") or win.get("wall")) if (win.get("host_wall_id") or win.get("wall")) else None
+
+    grid_spec = placement.get("grid") or win.get("grid") or placement.get("position") or win.get("position") or win.get("location")
+    if grid_spec is not None:
+        p_res = grid_sys.resolve_point(grid_spec)
+        position = (p_res[0] * scale + ox, p_res[1] * scale + oy)
+    else:
+        position = (ox, oy)
+
+    return Window(
+        id_str=w_id,
+        name=w_name,
+        tag=tag,
+        position=position,
+        width=width,
+        height=height,
+        sill_height=sill_height,
+        depth=depth,
+        frame_width=frame_width,
+        glass_thickness=glass_thickness,
+        elevation=abs_elevation,
+        direction=direction,
+        window_type=window_type,
+        host_wall_id=host_wall_id,
+        properties=win.get("properties"),
     )
