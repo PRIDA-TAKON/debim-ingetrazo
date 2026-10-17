@@ -1,0 +1,55 @@
+project:
+  name: Church of the Light
+  units: m
+  version: 1.0
+  origin: [0, 0, 0]
+
+building:
+  name: Church of the Light
+  storeys:
+    - id: CHAPEL_MAIN
+      name: Main Chapel Sanctuary
+      elevation: 0.0
+      height: 5.8
+      slabs:
+        - id: SLAB_CHAPEL_FLOOR
+          name: Concrete Chapel Floor
+          thickness: 0.3
+          boundary: [[0, 0], [6.0, 0], [6.0, 18.0], [0, 18.0]]
+      walls:
+        - id: WALL_CROSS_ALTAR
+          name: Altar Cruciform Light Void Wall
+          start: [0, 18.0]
+          end: [6.0, 18.0]
+          thickness: 0.35
+          height: 5.8
+          openings:
+            - id: VOID_CROSS_HORIZ
+              type: opening
+              offset: 0.5
+              width: 5.0
+              height: 0.4
+              sill_height: 3.0
+            - id: VOID_CROSS_VERT
+              type: opening
+              offset: 2.8
+              width: 0.4
+              height: 4.5
+              sill_height: 0.6
+        - id: WALL_DIAGONAL_ENTRY
+          name: Diagonal Concrete Wall
+          start: [-1.5, 3.0]
+          end: [4.5, 12.0]
+          thickness: 0.3
+          height: 5.8
+      columns:
+        - id: COL_ALTAR_LEFT
+          name: Sanctuary Column Left
+          position: [1.0, 17.0]
+          section: [0.4, 0.4]
+          height: 5.8
+        - id: COL_ALTAR_RIGHT
+          name: Sanctuary Column Right
+          position: [5.0, 17.0]
+          section: [0.4, 0.4]
+          height: 5.8

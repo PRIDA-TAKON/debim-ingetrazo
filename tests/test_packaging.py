@@ -1,3 +1,4 @@
+import json
 import zipfile
 import sys
 from pathlib import Path
@@ -22,3 +23,16 @@ def test_package_extension(tmp_path):
         namelist = zf.namelist()
         assert "debim_ingetrazo/__init__.py" in namelist
         assert "debim_ingetrazo/metadata.json" in namelist
+
+
+def test_catalog_entry_updates_sha256():
+    catalog_file = repo_root / "catalog_entry.json"
+    assert catalog_file.exists()
+
+    with open(catalog_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert data["id"] == "debim-ingetrazo"
+    assert data["version"] == "0.1.0"
+    assert "sha256" in data
+    assert len(data["sha256"]) == 64

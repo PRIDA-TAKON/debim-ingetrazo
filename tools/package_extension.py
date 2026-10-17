@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Packaging script for debim-ingetrazo extension.
-Packages debim_ingetrazo directory into dist/debim-ingetrazo.zip
-and outputs the SHA-256 digest.
+Packages debim_ingetrazo directory into dist/debim-ingetrazo.zip,
+outputs the SHA-256 digest, and updates catalog_entry.json.
 """
 
 import hashlib
+import json
 import os
 import zipfile
 from pathlib import Path
@@ -34,7 +35,23 @@ def package_extension(source_dir: Path, output_zip: Path) -> str:
         while chunk := f.read(8192):
             sha256.update(chunk)
 
-    return sha256.hexdigest()
+    digest = sha256.hexdigest()
+
+    # Update catalog_entry.json if present
+    repo_root = source_dir.parent
+    catalog_file = repo_root / "catalog_entry.json"
+    if catalog_file.exists():
+        try:
+            with open(catalog_file, 'r', encoding='utf-8') as cf:
+                data = json.load(cf)
+            data["sha256"] = digest
+            with open(catalog_file, 'w', encoding='utf-8') as cf:
+                json.dump(data, cf, indent=2)
+                cf.write('\n')
+        except Exception as e:
+            print(f"Warning: Failed to update catalog_entry.json: {e}")
+
+    return digest
 
 
 def main():
