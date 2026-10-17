@@ -71,3 +71,84 @@ def test_register_plugin_with_dummy_app():
     assert isinstance(plugin, DebimPlugin)
     assert len(app.tools) == 1
     assert app.tools[0] == plugin
+
+
+def test_debim_plugin_build_footing_faces():
+    from debim_ingetrazo.builder import Footing
+
+    footing = Footing(
+        id_str="F1",
+        position=(5.0, 5.0),
+        section=(1.2, 1.2),
+        thickness=0.5,
+        elevation=-0.5,
+    )
+    faces = DebimPlugin._build_footing_faces(footing)
+
+    # Footing is a box volume -> 6 quad faces
+    assert len(faces) == 6
+    for face in faces:
+        assert len(face) == 4
+        for pt in face:
+            assert len(pt) == 3
+
+
+def test_debim_plugin_build_roof_faces():
+    from debim_ingetrazo.builder import Roof
+
+    # 1. Gable roof
+    roof_gable = Roof(
+        id_str="RF_GABLE",
+        boundary=[(0.0, 0.0), (10.0, 0.0), (10.0, 8.0), (0.0, 8.0)],
+        roof_type="gable",
+        pitch=30.0,
+        overhang=0.5,
+        elevation=3.0,
+        ridge_direction="X",
+    )
+    faces_gable = DebimPlugin._build_roof_faces(roof_gable)
+    # Gable roof has 2 sloping quads + 2 gable end triangles = 4 faces
+    assert len(faces_gable) == 4
+    for face in faces_gable:
+        assert len(face) in (3, 4)
+
+    # 2. Hip roof
+    roof_hip = Roof(
+        id_str="RF_HIP",
+        boundary=[(0.0, 0.0), (10.0, 0.0), (10.0, 6.0), (0.0, 6.0)],
+        roof_type="hip",
+        pitch=25.0,
+        overhang=0.5,
+        elevation=3.0,
+    )
+    faces_hip = DebimPlugin._build_roof_faces(roof_hip)
+    # Hip roof has 4 sloping faces (2 trapezoids + 2 triangles)
+    assert len(faces_hip) == 4
+
+    # 3. Shed roof
+    roof_shed = Roof(
+        id_str="RF_SHED",
+        boundary=[(0.0, 0.0), (8.0, 0.0), (8.0, 5.0), (0.0, 5.0)],
+        roof_type="shed",
+        pitch=15.0,
+        overhang=0.4,
+        elevation=3.0,
+        ridge_direction="X",
+    )
+    faces_shed = DebimPlugin._build_roof_faces(roof_shed)
+    # Shed roof has 1 sloping quad + 2 side triangles + 1 high wall quad = 4 faces
+    assert len(faces_shed) == 4
+
+    # 4. Flat roof
+    roof_flat = Roof(
+        id_str="RF_FLAT",
+        boundary=[(0.0, 0.0), (6.0, 0.0), (6.0, 6.0), (0.0, 6.0)],
+        roof_type="flat",
+        pitch=0.0,
+        overhang=0.2,
+        thickness=0.2,
+        elevation=3.0,
+    )
+    faces_flat = DebimPlugin._build_roof_faces(roof_flat)
+    # Flat roof slab has bottom + top + 4 sides = 6 quad faces
+    assert len(faces_flat) == 6

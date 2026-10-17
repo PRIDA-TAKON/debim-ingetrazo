@@ -361,8 +361,8 @@ def extract_elements(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                             elem_copy["storey"] = st_id
                         elements.append(elem_copy)
 
-            # Simplified entities: slabs, walls, columns, beams, footings
-            for category in ("slabs", "walls", "columns", "beams", "footings"):
+            # Simplified entities: slabs, walls, columns, beams, footings, roofs
+            for category in ("slabs", "walls", "columns", "beams", "footings", "roofs"):
                 cat_items = st.get(category)
                 if isinstance(cat_items, list):
                     for item in cat_items:

@@ -220,6 +220,10 @@ class DebimPlugin(Tool):
                     faces = self._build_column_faces(child)
                 elif child_type == "Beam":
                     faces = self._build_beam_faces(child)
+                elif child_type == "Footing":
+                    faces = self._build_footing_faces(child)
+                elif child_type == "Roof":
+                    faces = self._build_roof_faces(child)
                 else:
                     faces = []
 
@@ -432,6 +436,154 @@ class DebimPlugin(Tool):
             [b2, b3, t3, t2],  # side 2
             [b3, b0, t0, t3],  # start cap
         ]
+
+    @staticmethod
+    def _build_footing_faces(footing: Any) -> List[List[tuple]]:
+        x, y = footing.position
+        hw, hd = footing.section[0] / 2.0, footing.section[1] / 2.0
+        z_bot = footing.elevation
+        z_top = z_bot + footing.thickness
+
+        b0 = (x - hw, y - hd, z_bot)
+        b1 = (x + hw, y - hd, z_bot)
+        b2 = (x + hw, y + hd, z_bot)
+        b3 = (x - hw, y + hd, z_bot)
+
+        t0 = (x - hw, y - hd, z_top)
+        t1 = (x + hw, y - hd, z_top)
+        t2 = (x + hw, y + hd, z_top)
+        t3 = (x - hw, y + hd, z_top)
+
+        return [
+            [b0, b3, b2, b1],  # bottom
+            [t0, t1, t2, t3],  # top
+            [b0, b1, t1, t0],  # side 1
+            [b1, b2, t2, t1],  # side 2
+            [b2, b3, t3, t2],  # side 3
+            [b3, b0, t0, t3],  # side 4
+        ]
+
+    @staticmethod
+    def _build_roof_faces(roof: Any) -> List[List[tuple]]:
+        poly = getattr(roof, "eaves_boundary", None) or getattr(roof, "boundary", [])
+        if not poly or len(poly) < 3:
+            return []
+
+        roof_type = getattr(roof, "roof_type", "gable").lower()
+        pitch = getattr(roof, "pitch", 30.0)
+        z_eaves = getattr(roof, "elevation", 0.0)
+        thickness = getattr(roof, "thickness", 0.2)
+        ridge_dir = getattr(roof, "ridge_direction", "X").upper()
+        pitch_rad = math.radians(pitch)
+
+        min_x = min(p[0] for p in poly)
+        max_x = max(p[0] for p in poly)
+        min_y = min(p[1] for p in poly)
+        max_y = max(p[1] for p in poly)
+        w_x = max_x - min_x
+        w_y = max_y - min_y
+
+        if roof_type == "flat":
+            z_top = z_eaves + thickness
+            b_pts = [(p[0], p[1], z_eaves) for p in poly]
+            t_pts = [(p[0], p[1], z_top) for p in poly]
+            faces = [list(reversed(b_pts)), list(t_pts)]
+            n = len(poly)
+            for i in range(n):
+                nxt = (i + 1) % n
+                faces.append([b_pts[i], b_pts[nxt], t_pts[nxt], t_pts[i]])
+            return faces
+
+        e1 = (min_x, min_y, z_eaves)
+        e2 = (max_x, min_y, z_eaves)
+        e3 = (max_x, max_y, z_eaves)
+        e4 = (min_x, max_y, z_eaves)
+
+        if roof_type == "gable":
+            if ridge_dir == "X":
+                y_mid = (min_y + max_y) / 2.0
+                h_ridge = (w_y / 2.0) * math.tan(pitch_rad)
+                z_ridge = z_eaves + h_ridge
+                r1 = (min_x, y_mid, z_ridge)
+                r2 = (max_x, y_mid, z_ridge)
+
+                return [
+                    [e1, e2, r2, r1],  # South slope
+                    [e3, e4, r1, r2],  # North slope
+                    [e1, r1, e4],      # West gable end
+                    [e2, e3, r2],      # East gable end
+                ]
+            else:
+                x_mid = (min_x + max_x) / 2.0
+                h_ridge = (w_x / 2.0) * math.tan(pitch_rad)
+                z_ridge = z_eaves + h_ridge
+                r1 = (x_mid, min_y, z_ridge)
+                r2 = (x_mid, max_y, z_ridge)
+
+                return [
+                    [e1, r1, r2, e4],  # West slope
+                    [e2, e3, r2, r1],  # East slope
+                    [e1, e2, r1],      # South gable end
+                    [e4, r2, e3],      # North gable end
+                ]
+
+        elif roof_type == "hip":
+            if w_x >= w_y:
+                y_mid = (min_y + max_y) / 2.0
+                h_ridge = (w_y / 2.0) * math.tan(pitch_rad)
+                z_ridge = z_eaves + h_ridge
+                r1 = (min_x + w_y / 2.0, y_mid, z_ridge)
+                r2 = (max_x - w_y / 2.0, y_mid, z_ridge)
+
+                return [
+                    [e1, e2, r2, r1],  # South slope
+                    [e2, e3, r2],      # East slope
+                    [e3, e4, r1, r2],  # North slope
+                    [e4, e1, r1],      # West slope
+                ]
+            else:
+                x_mid = (min_x + max_x) / 2.0
+                h_ridge = (w_x / 2.0) * math.tan(pitch_rad)
+                z_ridge = z_eaves + h_ridge
+                r1 = (x_mid, min_y + w_x / 2.0, z_ridge)
+                r2 = (x_mid, max_y - w_x / 2.0, z_ridge)
+
+                return [
+                    [e1, e2, r1],      # South slope
+                    [e2, e3, r2, r1],  # East slope
+                    [e4, e3, r2],      # North slope
+                    [e1, r1, r2, e4],  # West slope
+                ]
+
+        elif roof_type == "shed":
+            if ridge_dir == "X":
+                h_rise = w_y * math.tan(pitch_rad)
+                s1 = (min_x, min_y, z_eaves)
+                s2 = (max_x, min_y, z_eaves)
+                s3 = (max_x, max_y, z_eaves + h_rise)
+                s4 = (min_x, max_y, z_eaves + h_rise)
+
+                return [
+                    [s1, s2, s3, s4],                            # Sloping quad
+                    [s1, s4, (min_x, max_y, z_eaves)],           # West triangle
+                    [s2, (max_x, max_y, z_eaves), s3],           # East triangle
+                    [(min_x, max_y, z_eaves), (max_x, max_y, z_eaves), s3, s4],  # North high wall
+                ]
+            else:
+                h_rise = w_x * math.tan(pitch_rad)
+                s1 = (min_x, min_y, z_eaves)
+                s2 = (max_x, min_y, z_eaves + h_rise)
+                s3 = (max_x, max_y, z_eaves + h_rise)
+                s4 = (min_x, max_y, z_eaves)
+
+                return [
+                    [s1, s2, s3, s4],                            # Sloping quad
+                    [s1, s2, (max_x, min_y, z_eaves)],           # South triangle
+                    [s4, (max_x, max_y, z_eaves), s3],           # North triangle
+                    [(max_x, min_y, z_eaves), (max_x, max_y, z_eaves), s3, s2],  # East high wall
+                ]
+
+        return []
 
 
 def register_plugin(app: Optional[Any] = None) -> DebimPlugin:
