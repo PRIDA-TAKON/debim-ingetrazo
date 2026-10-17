@@ -6,9 +6,9 @@
   "license": "MIT",
   "description": "Declarative OpenBIM manifest loader and live sync for IngeTrazo",
   "min_ingetrazo_version": "0.5.8",
-  "repository": "https://github.com/ingelibre/debim-ingetrazo",
-  "download_url": "https://github.com/ingelibre/debim-ingetrazo/releases/download/v0.1.0/debim-ingetrazo.zip",
-  "sha256": "34bca812df3e6951d2c3b2a8b1d52ee9daf0e45325c7095feaedd61c98778fda",
+  "repository": "https://github.com/PRIDA-TAKON/debim-ingetrazo",
+  "download_url": "https://github.com/PRIDA-TAKON/debim-ingetrazo/releases/download/v0.1.0/debim-ingetrazo.zip",
+  "sha256": "63af42f9ccf23d8398771e13515bd9f858298b80c0eafa4303ac2b9b42612d9b",
   "tags": [
     "openbim",
     "building-as-code",
