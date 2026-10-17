@@ -72,6 +72,15 @@ pytest
 
 ---
 
+## Benchmark & QTO Take-off Validation
+
+`debim-ingetrazo` includes end-to-end (E2E) interoperability and quantity take-off (QTO) benchmark validation tests against `debim CLI` playground models:
+
+* **Playground Model (`examples/playground.debim.yaml`):** Validates `schema: IFC4-Minimal` grid intersections and column placement geometry.
+* **Villa DB1 Model (`examples/villa_db1.debim.yaml`):** Validates full structural multi-class take-off (slabs, spread footings, RC columns, DB1 RC beams with rebar specs, and exterior walls), verifying 100% element count, dimensions, 3D coordinates, and QTO volume/area calculations matching `debim CLI`.
+
+---
+
 ## License
 
 Distributed under the [MIT License](LICENSE).

@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 
 from debim_ingetrazo.parser import parse_debim
-from debim_ingetrazo.builder import build_geometry, Slab, Wall, Column, Group
+from debim_ingetrazo.builder import build_geometry, Slab, Wall, Column, Beam, Footing, Group
 from debim_ingetrazo.plugin import DebimPlugin
 
 SAMPLES_DIR = Path(__file__).resolve().parent / "samples"
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
 
 def test_e2e_modern_thai_house_benchmark():
@@ -122,6 +123,130 @@ def test_e2e_church_of_the_light_benchmark():
     assert diag_wall.length == pytest.approx(expected_len)
 
 
+def test_e2e_playground_benchmark():
+    file_path = EXAMPLES_DIR / "playground.debim.yaml"
+    data = parse_debim(str(file_path))
+    model = build_geometry(data)
+
+    assert model.name == "ทดสอบพิมพ์แบบบ้าน Playground"
+    assert model.units == "m" or isinstance(model.units, dict)
+    assert model.unit_scale == 1.0
+    assert len(model.storeys) == 1
+
+    st = model.storeys[0]
+    assert st.id == "L1"
+    assert st.elevation == 0.0
+    assert st.height == 3.5
+
+    # Grid system check
+    assert model.grid_system is not None
+    assert model.grid_system.axes_x == {"1": 0.0, "2": 4.0, "3": 8.0}
+    assert model.grid_system.axes_y == {"A": 0.0, "B": 5.0}
+
+    # Column check and QTO take-off calculation
+    cols = [c for c in st.children if isinstance(c, Column)]
+    assert len(cols) == 1
+    col = cols[0]
+    assert col.tag == "C1"
+    assert col.position == (0.0, 0.0)
+    assert col.section == (0.3, 0.3)
+    assert col.height == 3.5
+    assert col.volume == pytest.approx(0.3 * 0.3 * 3.5)  # 0.315 m³
+
+
+def test_e2e_villa_db1_benchmark():
+    file_path = EXAMPLES_DIR / "villa_db1.debim.yaml"
+    data = parse_debim(str(file_path))
+    model = build_geometry(data)
+
+    assert model.name == "Villa with Spread Footings & DB1 Beams"
+    assert model.units == "m"
+    assert len(model.storeys) == 1
+
+    st = model.storeys[0]
+    assert st.id == "ST_01"
+    assert st.elevation == 0.0
+    assert st.height == 3.2
+
+    # Total element count in storey
+    assert len(st.children) == 17
+
+    # 1. Ground Slab QTO Take-Off Validation
+    slabs = [c for c in st.children if isinstance(c, Slab)]
+    assert len(slabs) == 1
+    slab_gf = slabs[0]
+    assert slab_gf.id == "SLAB_GF"
+    assert slab_gf.tag == "S-SLAB"
+    assert slab_gf.thickness == 0.25
+    assert slab_gf.elevation == 0.0
+    assert slab_gf.area == pytest.approx(80.0)  # 10m x 8m
+    assert slab_gf.volume == pytest.approx(20.0)  # 80m² x 0.25m
+
+    # 2. Spread Footings QTO Take-Off Validation
+    footings = [c for c in st.children if isinstance(c, Footing)]
+    assert len(footings) == 4
+    total_footing_vol = sum(f.volume for f in footings)
+    assert total_footing_vol == pytest.approx(1.2)  # 4 x (1m x 1m x 0.3m)
+    for f in footings:
+        assert f.tag == "S-FOOTING"
+        assert f.thickness == 0.3
+        assert f.elevation == -0.7
+        assert f.section == (1.0, 1.0)
+        assert f.volume == pytest.approx(0.3)
+
+    footing_positions = {f.id: f.position for f in footings}
+    assert footing_positions["F1_C1"] == pytest.approx((0.0, 0.0))
+    assert footing_positions["F2_C2"] == pytest.approx((10.0, 0.0))
+    assert footing_positions["F3_C3"] == pytest.approx((10.0, 8.0))
+    assert footing_positions["F4_C4"] == pytest.approx((0.0, 8.0))
+
+    # 3. Structural RC Columns QTO Take-Off Validation
+    columns = [c for c in st.children if isinstance(c, Column)]
+    assert len(columns) == 4
+    total_column_vol = sum(c.volume for c in columns)
+    assert total_column_vol == pytest.approx(2.048)  # 4 x (0.4m x 0.4m x 3.2m)
+    for col in columns:
+        assert col.tag == "S-COLS"
+        assert col.section == (0.4, 0.4)
+        assert col.height == 3.2
+        assert col.volume == pytest.approx(0.512)
+
+    col_positions = {c.id: c.position for c in columns}
+    assert col_positions["C1"] == pytest.approx((0.0, 0.0))
+    assert col_positions["C2"] == pytest.approx((10.0, 0.0))
+    assert col_positions["C3"] == pytest.approx((10.0, 8.0))
+    assert col_positions["C4"] == pytest.approx((0.0, 8.0))
+
+    # 4. DB1 Reinforced Concrete Beams QTO Take-Off Validation
+    beams = [c for c in st.children if isinstance(c, Beam)]
+    assert len(beams) == 4
+    total_beam_vol = sum(b.volume for b in beams)
+    assert total_beam_vol == pytest.approx(2.88)  # 2 x (10m x 0.2m x 0.4m) + 2 x (8m x 0.2m x 0.4m) = 1.6 + 1.28 = 2.88
+    for b in beams:
+        assert b.tag == "S-BEAM"
+        assert b.width == 0.2
+        assert b.depth == 0.4
+        assert b.elevation == -0.4
+        assert b.properties.get("rebar_main") == "4DB12"
+        assert b.properties.get("rebar_stirrup") == "RB9@0.15"
+
+    beam_lens = {b.id: b.length for b in beams}
+    assert beam_lens["DB1_C1_C2"] == pytest.approx(10.0)
+    assert beam_lens["DB1_C2_C3"] == pytest.approx(8.0)
+    assert beam_lens["DB1_C3_C4"] == pytest.approx(10.0)
+    assert beam_lens["DB1_C4_C1"] == pytest.approx(8.0)
+
+    # 5. Exterior Walls QTO Take-Off Validation
+    walls = [c for c in st.children if isinstance(c, Wall)]
+    assert len(walls) == 4
+    total_wall_gross_vol = sum(w.gross_volume for w in walls)
+    assert total_wall_gross_vol == pytest.approx(23.04)  # 2 x (10m x 0.2m x 3.2m) + 2 x (8m x 0.2m x 3.2m) = 12.8 + 10.24 = 23.04
+    for w in walls:
+        assert w.tag == "A-WALL"
+        assert w.thickness == 0.2
+        assert w.height == 3.2
+
+
 def test_plugin_import_benchmark_manifests():
     plugin = DebimPlugin()
 
@@ -139,4 +264,20 @@ def test_plugin_import_benchmark_manifests():
     assert res_church is not None
     assert plugin.active_model is not None
     assert plugin.active_model.name == "Church of the Light"
+    assert len(plugin.active_model.storeys) == 1
+
+    # Import Playground model
+    playground_path = EXAMPLES_DIR / "playground.debim.yaml"
+    res_playground = plugin.import_manifest(str(playground_path))
+    assert res_playground is not None
+    assert plugin.active_model is not None
+    assert plugin.active_model.name == "ทดสอบพิมพ์แบบบ้าน Playground"
+    assert len(plugin.active_model.storeys) == 1
+
+    # Import Villa DB1 model
+    villa_path = EXAMPLES_DIR / "villa_db1.debim.yaml"
+    res_villa = plugin.import_manifest(str(villa_path))
+    assert res_villa is not None
+    assert plugin.active_model is not None
+    assert plugin.active_model.name == "Villa with Spread Footings & DB1 Beams"
     assert len(plugin.active_model.storeys) == 1
