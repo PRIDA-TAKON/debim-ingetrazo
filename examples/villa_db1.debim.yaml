@@ -1,0 +1,181 @@
+# ==============================================================================
+# Model: Villa with Spread Footings & Reinforced Concrete Beams (DB1)
+# Format: .debim (Declarative Building-as-Code)
+# ==============================================================================
+
+project:
+  name: "Villa with Spread Footings & DB1 Beams"
+  units: "m"
+
+storeys:
+  - id: "ST_01"
+    name: "Ground Floor"
+    elevation: 0.0
+    height: 3.2
+
+    # 1. แผ่นพื้นชั้นล่าง (S-SLAB)
+    slabs:
+      - id: "SLAB_GF"
+        name: "Ground Slab"
+        thickness: 0.25
+        elevation: 0.0
+        boundary: [[0, 0], [10, 0], [10, 8], [0, 8]]
+
+      # 2. ฐานรากคอนกรีต ฐานแผ่ 1x1x0.3 m ใต้เสาทั้ง 4 มุม (elevation -0.7 ถึง -0.4 m รองรับใต้คาน)
+      - id: "F1_C1"
+        name: "Spread Footing F1"
+        tag: "S-FOOTING"
+        thickness: 0.3
+        elevation: -0.7
+        boundary: [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]
+      - id: "F2_C2"
+        name: "Spread Footing F2"
+        tag: "S-FOOTING"
+        thickness: 0.3
+        elevation: -0.7
+        boundary: [[9.5, -0.5], [10.5, -0.5], [10.5, 0.5], [9.5, 0.5]]
+      - id: "F3_C3"
+        name: "Spread Footing F3"
+        tag: "S-FOOTING"
+        thickness: 0.3
+        elevation: -0.7
+        boundary: [[9.5, 7.5], [10.5, 7.5], [10.5, 8.5], [9.5, 8.5]]
+      - id: "F4_C4"
+        name: "Spread Footing F4"
+        tag: "S-FOOTING"
+        thickness: 0.3
+        elevation: -0.7
+        boundary: [[-0.5, 7.5], [0.5, 7.5], [0.5, 8.5], [-0.5, 8.5]]
+
+    # 3. เสาคอนกรีต 4 มุม (S-COLS)
+    columns:
+      - id: "C1"
+        name: "Column C1"
+        tag: "S-COLS"
+        position: [0, 0]
+        section: [0.4, 0.4]
+        height: 3.2
+        elevation: 0.0
+      - id: "C2"
+        name: "Column C2"
+        tag: "S-COLS"
+        position: [10, 0]
+        section: [0.4, 0.4]
+        height: 3.2
+        elevation: 0.0
+      - id: "C3"
+        name: "Column C3"
+        tag: "S-COLS"
+        position: [10, 8]
+        section: [0.4, 0.4]
+        height: 3.2
+        elevation: 0.0
+      - id: "C4"
+        name: "Column C4"
+        tag: "S-COLS"
+        position: [0, 8]
+        section: [0.4, 0.4]
+        height: 3.2
+        elevation: 0.0
+
+    # 4. คานคอนกรีต DB1 ขนาด 0.2x0.4 m วิ่งระหว่างเสา (S-BEAM)
+    beams:
+      - id: "DB1_C1_C2"
+        name: "Beam DB1 (C1-C2)"
+        tag: "S-BEAM"
+        section: [0.2, 0.4]
+        elevation: -0.4
+        depth: 0.4
+        start: [0, 0]
+        end: [10, 0]
+        rebar: "4db12 rb9@0.15"
+        rebar_main: "4DB12"
+        rebar_stirrup: "RB9@0.15"
+        properties:
+          mark: "DB1"
+          section_dim: "0.20x0.40"
+          main_rebar: "4-DB12"
+          stirrups: "RB9@0.15"
+          fc: "240 ksc"
+      - id: "DB1_C2_C3"
+        name: "Beam DB1 (C2-C3)"
+        tag: "S-BEAM"
+        section: [0.2, 0.4]
+        elevation: -0.4
+        depth: 0.4
+        start: [10, 0]
+        end: [10, 8]
+        rebar: "4db12 rb9@0.15"
+        rebar_main: "4DB12"
+        rebar_stirrup: "RB9@0.15"
+        properties:
+          mark: "DB1"
+          section_dim: "0.20x0.40"
+          main_rebar: "4-DB12"
+          stirrups: "RB9@0.15"
+          fc: "240 ksc"
+      - id: "DB1_C3_C4"
+        name: "Beam DB1 (C3-C4)"
+        tag: "S-BEAM"
+        section: [0.2, 0.4]
+        elevation: -0.4
+        depth: 0.4
+        start: [10, 8]
+        end: [0, 8]
+        rebar: "4db12 rb9@0.15"
+        rebar_main: "4DB12"
+        rebar_stirrup: "RB9@0.15"
+        properties:
+          mark: "DB1"
+          section_dim: "0.20x0.40"
+          main_rebar: "4-DB12"
+          stirrups: "RB9@0.15"
+          fc: "240 ksc"
+      - id: "DB1_C4_C1"
+        name: "Beam DB1 (C4-C1)"
+        tag: "S-BEAM"
+        section: [0.2, 0.4]
+        elevation: -0.4
+        depth: 0.4
+        start: [0, 8]
+        end: [0, 0]
+        rebar: "4db12 rb9@0.15"
+        rebar_main: "4DB12"
+        rebar_stirrup: "RB9@0.15"
+        properties:
+          mark: "DB1"
+          section_dim: "0.20x0.40"
+          main_rebar: "4-DB12"
+          stirrups: "RB9@0.15"
+          fc: "240 ksc"
+
+    # 5. ผนังรอบนอกอาคาร (A-WALL)
+    walls:
+      - id: "W1"
+        name: "Wall 1 (C1-C2)"
+        tag: "A-WALL"
+        start: [0, 0]
+        end: [10, 0]
+        thickness: 0.2
+        height: 3.2
+      - id: "W2"
+        name: "Wall 2 (C2-C3)"
+        tag: "A-WALL"
+        start: [10, 0]
+        end: [10, 8]
+        thickness: 0.2
+        height: 3.2
+      - id: "W3"
+        name: "Wall 3 (C3-C4)"
+        tag: "A-WALL"
+        start: [10, 8]
+        end: [0, 8]
+        thickness: 0.2
+        height: 3.2
+      - id: "W4"
+        name: "Wall 4 (C4-C1)"
+        tag: "A-WALL"
+        start: [0, 8]
+        end: [0, 0]
+        thickness: 0.2
+        height: 3.2

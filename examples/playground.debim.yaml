@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=./debim.schema.json
+# ==============================================================================
+# debim Playground: ทดสอบพิมพ์และดู Autocomplete (IntelliSense)
+# ลองเลื่อนเคอร์เซอร์ไปบรรทัดใหม่ แล้วกด Ctrl + Space
+# ==============================================================================
+
+schema: "IFC4-Minimal"
+
+project:
+  id: "PRJ-PLAYGROUND"
+  name: "ทดสอบพิมพ์แบบบ้าน Playground"
+  units:
+    length: "METER"
+    area: "SQUARE_METER"
+    volume: "CUBIC_METER"
+
+spatial_structure:
+  storeys:
+    - id: "L1"
+      name: "Ground Floor"
+      elevation: 0.0
+      height: 3.5
+
+grids:
+  axes_x:
+    "1": 0.0
+    "2": 4.0
+    "3": 8.0
+  axes_y:
+    "A": 0.0
+    "B": 5.0
+
+materials:
+  - id: "CONC_240"
+    name: "คอนกรีตผสมเสร็จ 240 ksc"
+    category: "concrete"
+    unit_cost_ref: "MAT-C240"
+
+elements:
+  - class: IfcColumn
+    tag: "C1"
+    material: "CONC_240"
+    profile:
+      shape: BOX
+      width: 0.3
+      depth: 0.3
+    placement:
+      grid: ["1", "A"]
+      storey: "L1"
+
+  # [ลองพิมพ์เพิ่มตรงนี้]: พิมพ์ - class: แล้วกด Ctrl + Space ดูครับ

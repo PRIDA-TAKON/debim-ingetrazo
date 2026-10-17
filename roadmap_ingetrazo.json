@@ -30,5 +30,13 @@
       "body": "### Overview\nValidate the extension against iconic debim models and prepare the distribution package for ingelibre/ingetrazo-extensions.\n\n### Tasks\n1. Add unit and E2E integration tests in `tests/` validating manifest import on sample models (Modern Thai House, Church of the Light).\n2. Generate extension catalog registry entry (`catalog_entry.json`) conforming to `ingelibre/ingetrazo-extensions` schema.\n3. Verify automated zip build and SHA-256 release workflow.",
       "label": "jules"
     }
+  },
+  {
+    "match_keywords": ["catalog", "submission", "issue 5", "#5", "standard syntax", "ifc4", "roadmap"],
+    "next_issue": {
+      "title": "feat(spec): debim CLI IFC4-Minimal standard syntax and comprehensive BIM classes",
+      "body": "### Overview\nAlign debim-ingetrazo parser and geometry builder with official debim CLI specification (`schema: IFC4-Minimal`).\n\n### Tasks\n1. Dual-mode parser supporting `elements: [{ class: Ifc..., placement: { grid: ... } }]` and `grids: { axes_x, axes_y }`.\n2. Grid-offset evaluation (e.g. 'GX_1 + 0.10', 'from_grid', 'to_grid').\n3. Full BIM Class suite: `IfcFooting`, `IfcRoof`, `IfcStair`, `IfcSpace`, `IfcGrid`, `IfcDoor`, `IfcWindow`.\n4. Comprehensive test coverage matching `debim CLI` output.",
+      "label": "jules"
+    }
   }
 ]
