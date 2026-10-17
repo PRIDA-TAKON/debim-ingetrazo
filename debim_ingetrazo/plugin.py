@@ -164,3 +164,48 @@ def register_plugin(app: Optional[Any] = None) -> DebimPlugin:
     if app is not None and hasattr(app, "register_tool"):
         app.register_tool(plugin)
     return plugin
+
+
+def setup(app: Any) -> None:
+    """
+    Official setup(app) entry point called by IngeTrazo's extension loader.
+    """
+    plugin = register_plugin(app)
+
+    def on_import() -> None:
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            win = getattr(app, "window", None)
+            path, _ = QFileDialog.getOpenFileName(
+                win,
+                "Select .debim Manifest",
+                "",
+                "debim Files (*.debim *.yaml *.yml);;All Files (*.*)",
+            )
+            if path:
+                plugin.import_manifest(path)
+                if hasattr(app, "viewport") and hasattr(app.viewport, "update"):
+                    app.viewport.update()
+        except Exception as e:
+            print(f"[debim] Error importing manifest: {e}")
+
+    def on_live_sync() -> None:
+        enabled = plugin.toggle_live_sync()
+        if hasattr(app, "viewport") and hasattr(app.viewport, "flash_status"):
+            app.viewport.flash_status(f"debim Live Sync: {'ON' if enabled else 'OFF'}")
+
+    def on_console() -> None:
+        plugin.open_agentic_ai_console()
+
+    # Try registering via app.add_menu / add_menu_action
+    if hasattr(app, "add_menu"):
+        sub = app.add_menu("debim")
+        if sub is not None:
+            sub.addAction("Import .debim Manifest...", on_import)
+            sub.addAction("Toggle Live Sync", on_live_sync)
+            sub.addAction("Open Agentic AI Console", on_console)
+    elif hasattr(app, "add_menu_action"):
+        app.add_menu_action("debim: Import Manifest...", on_import, "Ctrl+Shift+D", "Import .debim OpenBIM manifest")
+        app.add_menu_action("debim: Toggle Live Sync", on_live_sync, "", "Toggle live hot-reload sync")
+        app.add_menu_action("debim: AI Console", on_console, "Ctrl+Shift+A", "Open debim AI Console")
+
