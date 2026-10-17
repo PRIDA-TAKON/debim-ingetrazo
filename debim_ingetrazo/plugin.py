@@ -206,6 +206,8 @@ class DebimPlugin(Tool):
                     faces = self._build_slab_faces(child)
                 elif child_type == "Column":
                     faces = self._build_column_faces(child)
+                elif child_type == "Beam":
+                    faces = self._build_beam_faces(child)
                 else:
                     faces = []
 
@@ -327,6 +329,49 @@ class DebimPlugin(Tool):
                 nxt = (i + 1) % 4
                 faces.append([b_pts[i], b_pts[nxt], t_pts[nxt], t_pts[i]])
             return faces
+
+    @staticmethod
+    def _build_beam_faces(beam: Any) -> List[List[tuple]]:
+        start, end = beam.start, beam.end
+        width, depth, elevation = beam.width, beam.depth, beam.elevation
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        L = math.hypot(dx, dy)
+        if L == 0:
+            return []
+        nx = -dy / L * (width / 2.0)
+        ny = dx / L * (width / 2.0)
+
+        elev_ref = (
+            getattr(beam, "properties", {}).get("elevation_ref", "bottom")
+            if hasattr(beam, "properties") and beam.properties
+            else "bottom"
+        )
+        if elev_ref == "top":
+            z_bot = elevation - depth
+            z_top = elevation
+        else:
+            z_bot = elevation
+            z_top = elevation + depth
+
+        b0 = (start[0] + nx, start[1] + ny, z_bot)
+        b1 = (end[0] + nx, end[1] + ny, z_bot)
+        b2 = (end[0] - nx, end[1] - ny, z_bot)
+        b3 = (start[0] - nx, start[1] - ny, z_bot)
+
+        t0 = (start[0] + nx, start[1] + ny, z_top)
+        t1 = (end[0] + nx, end[1] + ny, z_top)
+        t2 = (end[0] - nx, end[1] - ny, z_top)
+        t3 = (start[0] - nx, start[1] - ny, z_top)
+
+        return [
+            [b0, b3, b2, b1],  # bottom
+            [t0, t1, t2, t3],  # top
+            [b0, b1, t1, t0],  # side 1
+            [b1, b2, t2, t1],  # end cap
+            [b2, b3, t3, t2],  # side 2
+            [b3, b0, t0, t3],  # start cap
+        ]
 
 
 def register_plugin(app: Optional[Any] = None) -> DebimPlugin:

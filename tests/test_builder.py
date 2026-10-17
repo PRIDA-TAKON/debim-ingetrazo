@@ -5,7 +5,7 @@ Unit tests for 3D entity geometry builder (debim_ingetrazo/builder.py).
 import math
 import pytest
 from debim_ingetrazo.parser import parse_debim_str
-from debim_ingetrazo.builder import build_geometry, Slab, Wall, Column, Group
+from debim_ingetrazo.builder import build_geometry, Slab, Wall, Column, Beam, Group
 
 
 def test_builder_storeys_and_tags():
@@ -121,3 +121,45 @@ def test_builder_unit_scaling_and_offsets():
     # Boundary scaled + ox, oy
     assert slab.boundary == [(1000.0, 2000.0), (1002.0, 2000.0), (1002.0, 2002.0), (1000.0, 2002.0)]
     assert slab.area == pytest.approx(4.0)  # 2m x 2m
+
+
+def test_builder_beams():
+    manifest_yaml = """
+    project:
+      name: RC Beam Test
+      units: m
+    storeys:
+      - id: GF
+        name: Ground Floor
+        elevation: 0.0
+        height: 3.2
+        beams:
+          - id: DB1_1
+            name: "Ground Beam DB1"
+            tag: "S-BEAM"
+            section: [0.2, 0.4]
+            start: [0, 0]
+            end: [10, 0]
+            elevation: -0.4
+            rebar: "4db12 rb9@0.15"
+            rebar_main: "4DB12"
+            rebar_stirrup: "RB9@0.15"
+    """
+    data = parse_debim_str(manifest_yaml)
+    model = build_geometry(data)
+
+    storey = model.storeys[0]
+    assert len(storey.children) == 1
+    beam = storey.children[0]
+    assert isinstance(beam, Beam)
+    assert beam.id == "DB1_1"
+    assert beam.tag == "S-BEAM"
+    assert beam.width == 0.2
+    assert beam.depth == 0.4
+    assert beam.length == 10.0
+    assert beam.volume == pytest.approx(10.0 * 0.2 * 0.4)
+    assert beam.elevation == -0.4
+    assert beam.properties["rebar"] == "4db12 rb9@0.15"
+    assert beam.properties["rebar_main"] == "4DB12"
+    assert beam.properties["rebar_stirrup"] == "RB9@0.15"
+

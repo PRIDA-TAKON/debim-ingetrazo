@@ -297,6 +297,79 @@ class Column(GeometryObject):
         return res
 
 
+class Beam(GeometryObject):
+    """Component Instance representing structural beams (S-BEAM tag)."""
+
+    def __init__(
+        self,
+        id_str: str,
+        name: str = "",
+        tag: str = "S-BEAM",
+        start: Tuple[float, float] = (0.0, 0.0),
+        end: Tuple[float, float] = (1.0, 0.0),
+        width: float = 0.2,
+        depth: float = 0.4,
+        elevation: float = 0.0,
+        properties: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(id_str, name=name, tag=tag or "S-BEAM", properties=properties)
+        self.start = start
+        self.end = end
+        self.width = width
+        self.depth = depth
+        self.elevation = elevation
+
+    @property
+    def length(self) -> float:
+        dx = self.end[0] - self.start[0]
+        dy = self.end[1] - self.start[1]
+        return math.hypot(dx, dy)
+
+    @property
+    def volume(self) -> float:
+        return self.length * self.width * self.depth
+
+    def get_3d_bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
+        dx = self.end[0] - self.start[0]
+        dy = self.end[1] - self.start[1]
+        len_val = math.hypot(dx, dy)
+        if len_val == 0:
+            nx, ny = 0.0, 0.0
+        else:
+            nx, ny = -dy / len_val * (self.width / 2.0), dx / len_val * (self.width / 2.0)
+
+        corners = [
+            (self.start[0] + nx, self.start[1] + ny),
+            (self.start[0] - nx, self.start[1] - ny),
+            (self.end[0] + nx, self.end[1] + ny),
+            (self.end[0] - nx, self.end[1] - ny),
+        ]
+
+        min_x = min(p[0] for p in corners)
+        max_x = max(p[0] for p in corners)
+        min_y = min(p[1] for p in corners)
+        max_y = max(p[1] for p in corners)
+        min_z = min(self.elevation, self.elevation + self.depth)
+        max_z = max(self.elevation, self.elevation + self.depth)
+        return ((min_x, min_y, min_z), (max_x, max_y, max_z))
+
+    def to_dict(self) -> Dict[str, Any]:
+        res = super().to_dict()
+        res.update(
+            {
+                "start": self.start,
+                "end": self.end,
+                "length": self.length,
+                "width": self.width,
+                "depth": self.depth,
+                "elevation": self.elevation,
+                "volume": self.volume,
+                "bounds": self.get_3d_bounds(),
+            }
+        )
+        return res
+
+
 class BuildingModel:
     """Root representation of the entire loaded .debim model."""
 
@@ -360,7 +433,7 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
     # Read storeys / levels
     storeys_data = bldg_info.get("storeys") or manifest_data.get("storeys") or []
 
-    if not storeys_data and ("slabs" in manifest_data or "walls" in manifest_data or "columns" in manifest_data):
+    if not storeys_data and ("slabs" in manifest_data or "walls" in manifest_data or "columns" in manifest_data or "beams" in manifest_data):
         # Top-level entities fallback storey
         storeys_data = [{
             "id": "DEFAULT_STOREY",
@@ -370,6 +443,7 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
             "slabs": manifest_data.get("slabs", []),
             "walls": manifest_data.get("walls", []),
             "columns": manifest_data.get("columns", []),
+            "beams": manifest_data.get("beams", []),
         }]
 
     for idx, st in enumerate(storeys_data):
@@ -404,6 +478,12 @@ def build_geometry(manifest_data: Dict[str, Any]) -> BuildingModel:
         for c_idx, cl in enumerate(cols_data):
             col_obj = _build_column(cl, c_idx, st_elev, st_height, scale, ox, oy)
             storey_group.add_child(col_obj)
+
+        # 4. Build Beams (S-BEAM tag)
+        beams_data = st.get("beams") or []
+        for b_idx, bm in enumerate(beams_data):
+            beam_obj = _build_beam(bm, b_idx, st_elev, scale, ox, oy)
+            storey_group.add_child(beam_obj)
 
         model.storeys.append(storey_group)
         model.root_group.add_child(storey_group)
@@ -539,3 +619,51 @@ def _build_column(
         component=component,
         properties=cl.get("properties"),
     )
+
+
+def _build_beam(
+    bm: Dict[str, Any],
+    idx: int,
+    storey_elevation: float,
+    scale: float,
+    ox: float,
+    oy: float,
+) -> Beam:
+    b_id = str(bm.get("id", f"BEAM_{idx+1}"))
+    b_name = str(bm.get("name", f"Beam {idx+1}"))
+    tag = str(bm.get("tag", "S-BEAM"))
+
+    sec = bm.get("section")
+    if isinstance(sec, (list, tuple)) and len(sec) >= 2:
+        width = float(sec[0]) * scale
+        depth = float(sec[1]) * scale
+    else:
+        width = float(bm.get("width", bm.get("b", 0.2))) * scale
+        depth = float(bm.get("depth", bm.get("height", bm.get("h", 0.4)))) * scale
+
+    local_offset = float(bm.get("offset", bm.get("elevation", 0.0))) * scale
+    abs_elevation = storey_elevation + local_offset
+
+    raw_start = bm.get("start", [0.0, 0.0])
+    raw_end = bm.get("end", [1.0, 0.0])
+    start = (float(raw_start[0]) * scale + ox, float(raw_start[1]) * scale + oy)
+    end = (float(raw_end[0]) * scale + ox, float(raw_end[1]) * scale + oy)
+
+    # Preserve rebar and structural properties
+    props = dict(bm.get("properties") or {})
+    for key in ("rebar", "rebar_main", "rebar_stirrup", "stirrup", "section_name", "material", "elevation_ref"):
+        if key in bm:
+            props[key] = bm[key]
+
+    return Beam(
+        id_str=b_id,
+        name=b_name,
+        tag=tag,
+        start=start,
+        end=end,
+        width=width,
+        depth=depth,
+        elevation=abs_elevation,
+        properties=props,
+    )
+

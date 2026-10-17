@@ -7,10 +7,13 @@ import pytest
 from debim_ingetrazo.agent_bridge import AgentBridge, DEFAULT_PORT
 
 
+TEST_BRIDGE_PORT = 18482
+
+
 @pytest.fixture
 def agent_bridge_server():
-    # Use port 8482 or dynamic free port for test
-    bridge = AgentBridge(host="127.0.0.1", port=DEFAULT_PORT)
+    # Use dedicated test port so tests don't conflict with a running IngeTrazo instance on 8482
+    bridge = AgentBridge(host="127.0.0.1", port=TEST_BRIDGE_PORT)
     bridge.start()
     time.sleep(0.1)
     yield bridge
@@ -19,7 +22,7 @@ def agent_bridge_server():
 
 def test_agent_bridge_get_status(agent_bridge_server):
     assert agent_bridge_server.is_running
-    url = f"http://127.0.0.1:{DEFAULT_PORT}/"
+    url = f"http://127.0.0.1:{agent_bridge_server.port}/"
     req = urllib.request.Request(url, method="GET")
     with urllib.request.urlopen(req) as resp:
         assert resp.status == 200
@@ -44,7 +47,7 @@ building:
     - id: L1
       name: Level 1
 """
-    url = f"http://127.0.0.1:{DEFAULT_PORT}/"
+    url = f"http://127.0.0.1:{agent_bridge_server.port}/"
     req = urllib.request.Request(
         url, data=debim_text.encode("utf-8"), headers={"Content-Type": "text/plain"}, method="POST"
     )
@@ -71,7 +74,7 @@ def test_agent_bridge_json_rpc_render_manifest(agent_bridge_server):
         "id": 42
     }
 
-    url = f"http://127.0.0.1:{DEFAULT_PORT}/"
+    url = f"http://127.0.0.1:{agent_bridge_server.port}/"
     req = urllib.request.Request(
         url, data=json.dumps(rpc_payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST"
     )
@@ -95,7 +98,7 @@ def test_agent_bridge_json_rpc_get_status(agent_bridge_server):
         "id": 101
     }
 
-    url = f"http://127.0.0.1:{DEFAULT_PORT}/"
+    url = f"http://127.0.0.1:{agent_bridge_server.port}/"
     req = urllib.request.Request(
         url, data=json.dumps(rpc_payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST"
     )
