@@ -1,0 +1,164 @@
+schema: "IFC4-Minimal"
+project:
+  name: "Sample Two-Storey Modern House"
+  units: "m"
+
+grids:
+  axes_x:
+    - id: "GX_1"
+      position: 0.0
+    - id: "GX_2"
+      position: 4.0
+    - id: "GX_3"
+      position: 8.0
+  axes_y:
+    - id: "GY_A"
+      position: 0.0
+    - id: "GY_B"
+      position: 5.0
+    - id: "GY_C"
+      position: 9.0
+
+storeys:
+  - id: "ST_01"
+    name: "Ground Floor"
+    elevation: 0.0
+    height: 3.5
+
+  - id: "ST_02"
+    name: "Second Floor"
+    elevation: 3.5
+    height: 3.2
+
+elements:
+  # ---------------- Foundations (Ground Level) ----------------
+  - id: "F1"
+    class: "IfcFooting"
+    storey: "ST_01"
+    footing_type: "SPREAD"
+    dimensions: { length: 1.2, width: 1.2, thickness: 0.35 }
+    placement: { grid: ["GX_1", "GY_A"], offset_z: -0.75 }
+
+  - id: "F2"
+    class: "IfcFooting"
+    storey: "ST_01"
+    footing_type: "SPREAD"
+    dimensions: { length: 1.2, width: 1.2, thickness: 0.35 }
+    placement: { grid: ["GX_2", "GY_A"], offset_z: -0.75 }
+
+  - id: "F3"
+    class: "IfcFooting"
+    storey: "ST_01"
+    footing_type: "SPREAD"
+    dimensions: { length: 1.2, width: 1.2, thickness: 0.35 }
+    placement: { grid: ["GX_3", "GY_A"], offset_z: -0.75 }
+
+  # ---------------- Ground Columns ----------------
+  - id: "C1_01"
+    class: "IfcColumn"
+    storey: "ST_01"
+    profile: "RECTANGULAR"
+    dimensions: { width: 0.25, depth: 0.25 }
+    height: 3.5
+    placement: { grid: ["GX_1", "GY_A"] }
+
+  - id: "C1_02"
+    class: "IfcColumn"
+    storey: "ST_01"
+    profile: "RECTANGULAR"
+    dimensions: { width: 0.25, depth: 0.25 }
+    height: 3.5
+    placement: { grid: ["GX_2", "GY_A"] }
+
+  - id: "C1_03"
+    class: "IfcColumn"
+    storey: "ST_01"
+    profile: "RECTANGULAR"
+    dimensions: { width: 0.25, depth: 0.25 }
+    height: 3.5
+    placement: { grid: ["GX_3", "GY_A"] }
+
+  # ---------------- Ground Beams (Level 3.5m) ----------------
+  - id: "B1_01"
+    class: "IfcBeam"
+    storey: "ST_01"
+    dimensions: { width: 0.20, depth: 0.40 }
+    placement: { from_grid: ["GX_1", "GY_A"], to_grid: ["GX_2", "GY_A"], elevation: 3.5 }
+    rebar:
+      main_top: "2DB16"
+      main_bottom: "2DB16"
+      stirrups: "RB9@0.15"
+
+  - id: "B1_02"
+    class: "IfcBeam"
+    storey: "ST_01"
+    dimensions: { width: 0.20, depth: 0.40 }
+    placement: { from_grid: ["GX_2", "GY_A"], to_grid: ["GX_3", "GY_A"], elevation: 3.5 }
+    rebar:
+      main_top: "2DB16"
+      main_bottom: "2DB16"
+      stirrups: "RB9@0.15"
+
+  # ---------------- Ground Slab ----------------
+  - id: "SLAB_GF"
+    class: "IfcSlab"
+    storey: "ST_01"
+    thickness: 0.15
+    boundary:
+      - ["GX_1", "GY_A"]
+      - ["GX_3", "GY_A"]
+      - ["GX_3", "GY_C"]
+      - ["GX_1", "GY_C"]
+
+  # ---------------- Exterior Walls & Openings ----------------
+  - id: "WALL_FRONT_1"
+    class: "IfcWall"
+    storey: "ST_01"
+    thickness: 0.10
+    height: 3.5
+    placement: { from_grid: ["GX_1", "GY_A"], to_grid: ["GX_2", "GY_A"] }
+    openings:
+      - id: "MAIN_DOOR_D1"
+        opening_type: "DOOR"
+        width: 1.0
+        height: 2.2
+        offset_x: 1.5
+
+  - id: "WALL_FRONT_2"
+    class: "IfcWall"
+    storey: "ST_01"
+    thickness: 0.10
+    height: 3.5
+    placement: { from_grid: ["GX_2", "GY_A"], to_grid: ["GX_3", "GY_A"] }
+    openings:
+      - id: "LIVING_WINDOW_W1"
+        opening_type: "WINDOW"
+        width: 2.0
+        height: 1.5
+        sill_height: 0.9
+        offset_x: 1.0
+
+  # ---------------- Architectural Space ----------------
+  - id: "SPACE_LIVING"
+    class: "IfcSpace"
+    storey: "ST_01"
+    name: "Living Room"
+    height: 3.0
+    boundary:
+      - [0.0, 0.0]
+      - [4.0, 0.0]
+      - [4.0, 5.0]
+      - [0.0, 5.0]
+
+  # ---------------- Roof ----------------
+  - id: "ROOF_MAIN"
+    class: "IfcRoof"
+    storey: "ST_02"
+    roof_type: "GABLE"
+    pitch_deg: 25.0
+    eaves_overhang: 0.8
+    boundary:
+      - ["GX_1", "GY_A"]
+      - ["GX_3", "GY_A"]
+      - ["GX_3", "GY_C"]
+      - ["GX_1", "GY_C"]
